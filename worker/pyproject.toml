@@ -1,0 +1,48 @@
+[build-system]
+requires = ["hatchling==1.27.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "freshrss-semantic-grouping"
+version = "0.1.0"
+description = "Offline semantic grouping worker for FreshRSS"
+readme = "../README.md"
+requires-python = ">=3.11,<3.14"
+license = { text = "GPL-3.0" }
+dependencies = [
+  "model2vec==0.6.0",
+  "numpy==2.2.6",
+  "semhash==0.4.1",
+  "usearch==2.19.0",
+  "vicinity==0.4.3",
+]
+
+[project.optional-dependencies]
+dev = [
+  "mypy==1.16.1",
+  "pytest==8.4.1",
+  "ruff==0.12.2",
+]
+
+[project.scripts]
+freshrss-semantic = "freshrss_semantic.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/freshrss_semantic"]
+
+[tool.pytest.ini_options]
+addopts = "-q"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+packages = ["freshrss_semantic"]
+
