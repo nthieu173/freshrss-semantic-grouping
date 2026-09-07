@@ -1,5 +1,5 @@
-ARG PYTHON_IMAGE=python:3.12.13-slim-bookworm
-ARG UV_IMAGE=ghcr.io/astral-sh/uv:0.12.3
+ARG PYTHON_IMAGE=python:3.14.7-slim-trixie
+ARG UV_IMAGE=ghcr.io/astral-sh/uv:0.12.10
 
 FROM ${UV_IMAGE} AS uv
 FROM ${PYTHON_IMAGE}
@@ -30,7 +30,7 @@ ENV PATH="/app/worker/.venv/bin:${PATH}" \
 COPY --from=uv /uv /usr/local/bin/uv
 WORKDIR /app
 COPY README.md /app/README.md
-COPY worker/pyproject.toml worker/uv.lock /app/worker/
+COPY worker/pyproject.toml worker/uv.lock worker/README.md /app/worker/
 RUN uv sync --project /app/worker --locked --no-dev --no-install-project \
 	&& uv cache clean \
 	&& mkdir -p /opt/models \

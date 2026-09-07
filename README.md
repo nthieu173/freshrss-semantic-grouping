@@ -6,7 +6,7 @@ duplicates, exports one complete generation selected by a native FreshRSS saved
 query, and renders the last published semantic groups. The worker sees only the
 shared semantic database; it never mounts or queries FreshRSS application data.
 
-The first release targets FreshRSS **1.29.1**, Python **3.12**, and
+The first release targets FreshRSS **1.29.1**, Python **3.14**, and
 `linux/arm64`. The shared database schema version is **1** and the extension
 configuration schema version is **2**.
 

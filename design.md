@@ -4,7 +4,7 @@
 
 This document describes the architecture implemented by the paired FreshRSS
 extension and Python worker in this repository. The version 0.1.0 design targets
-FreshRSS 1.29.1, Python 3.12, `linux/arm64`, extension configuration schema 2,
+FreshRSS 1.29.1, Python 3.14, `linux/arm64`, extension configuration schema 2,
 and semantic database schema 1.
 
 The extension owns user interaction, FreshRSS integration, candidate selection,
@@ -233,4 +233,3 @@ and published mappings.
 - [FreshRSS 1.29.1 maintenance-hook timing](https://github.com/FreshRSS/FreshRSS/blob/1.29.1/app/Controllers/feedController.php#L891-L938)
 - [SemHash](https://github.com/MinishLab/semhash)
 - [Model2Vec](https://github.com/MinishLab/model2vec)
-

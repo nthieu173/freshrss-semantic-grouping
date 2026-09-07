@@ -12,11 +12,13 @@ jobs:
   extension:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: shivammathur/setup-php@v2
         with:
-          php-version: '8.2'
+          php-version: '8.5'
           extensions: mbstring, intl, pdo_sqlite
+        env:
+          update: true
       - name: PHP syntax
         run: find extension -type f \( -name '*.php' -o -name '*.phtml' \) -print0 | xargs -0 -n1 php -l
       - name: Extension contract tests
@@ -30,11 +32,11 @@ jobs:
   worker:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
-          python-version: '3.12'
-      - run: python -m pip install uv==0.12.3
+          python-version: '3.14.7'
+      - run: python -m pip install uv==0.12.10
       - run: uv sync --project worker --locked --extra dev
       - run: uv run --project worker pytest
       - run: uv run --project worker ruff check worker/src worker/tests
@@ -46,18 +48,18 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: FreshRSS 1.29.1 and worker integration
         run: ./tests/integration/run.sh
 
   arm64-image:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: docker/setup-qemu-action@v3
-      - uses: docker/setup-buildx-action@v3
+      - uses: actions/checkout@v7
+      - uses: docker/setup-qemu-action@v4
+      - uses: docker/setup-buildx-action@v4
       - name: Build ARM64 worker
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: packaging/Containerfile

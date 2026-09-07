@@ -90,7 +90,7 @@ and the SemHash/USearch index do not occupy memory together. Each phase logs
 entry count, dimensions where applicable, duration, and peak RSS. The integration
 contract runs the real bundled model and SemHash below a 400 MiB hard limit.
 
-The image uses Python 3.12 with pinned direct and transitive dependencies. It
+The image uses Python 3.14 with pinned direct and transitive dependencies. It
 bundles `minishlab/potion-base-8M` at pinned model revision
 `bf8b056651a2c21b8d2565580b8569da283cab23`, runs as UID 10001 and GID 33, has
 no network listener, supports a read-only root filesystem, and uses `/tmp` only
@@ -111,4 +111,3 @@ the default runtime contract.
 - Disabled or expired configuration is a successful no-op.
 - Error state is bounded and sanitized; failures never affect FreshRSS data or
   health.
-
