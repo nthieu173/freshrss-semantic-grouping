@@ -140,11 +140,13 @@ final class SemanticGrouping_SemanticDatabase {
 		$pdo->exec('BEGIN IMMEDIATE');
 		try {
 			$result = $callback($pdo);
-			$pdo->commit();
+			$pdo->exec('COMMIT');
 			return $result;
 		} catch (Throwable $error) {
-			if ($pdo->inTransaction()) {
-				$pdo->rollBack();
+			try {
+				$pdo->exec('ROLLBACK');
+			} catch (Throwable) {
+				// Preserve the original error if SQLite already ended the transaction.
 			}
 			throw $error;
 		}

@@ -95,6 +95,16 @@ $path = $directory . '/semantic.sqlite';
 $database = new SemanticGrouping_SemanticDatabase($path);
 $pdo = $database->open(true);
 check((int)$pdo->query('PRAGMA user_version')->fetchColumn() === 1, 'database migration version failed');
+try {
+	SemanticGrouping_SemanticDatabase::transaction($pdo, static function (PDO $db): void {
+		$db->exec("INSERT INTO export_state(key, value) VALUES ('rollback-test', 'value')");
+		throw new RuntimeException('rollback requested');
+	});
+	throw new RuntimeException('transaction callback error was not rethrown');
+} catch (RuntimeException $error) {
+	check($error->getMessage() === 'rollback requested', 'transaction did not preserve the callback error');
+}
+check($pdo->query("SELECT COUNT(*) FROM export_state WHERE key = 'rollback-test'")->fetchColumn() == 0, 'transaction rollback failed');
 $generation = $database->allocateGeneration($pdo, 'query', 100);
 $database->writeCandidateBatch($pdo, $generation, [[
 	'entry_id' => '100000000', 'feed_id' => '1', 'received_at' => 100,
