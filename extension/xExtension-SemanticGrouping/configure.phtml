@@ -1,0 +1,139 @@
+<?php
+declare(strict_types=1);
+/** @var SemanticGroupingExtension $this */
+$config = $this->configuration;
+$source = is_array($config['candidate_source'] ?? null) ? $config['candidate_source'] : [];
+$selectedSource = ($source['mode'] ?? '') === 'all_entries' ? 'all_entries' : (string)($source['query_id'] ?? '');
+$checked = static fn(bool $value): string => $value ? ' checked="checked"' : '';
+$escaped = static fn(mixed $value): string => htmlspecialchars((string)$value, ENT_QUOTES, 'UTF-8');
+$formatTime = static function (mixed $value): string {
+	$timestamp = (int)$value;
+	return $timestamp > 0 ? date('Y-m-d H:i:s T', $timestamp) : 'Never';
+};
+?>
+
+<?php if ($this->notice !== ''): ?>
+	<p class="alert alert-success"><?= $escaped($this->notice) ?></p>
+<?php endif; ?>
+<?php foreach ($this->configurationErrors as $error): ?>
+	<p class="alert alert-error"><?= $escaped($error) ?></p>
+<?php endforeach; ?>
+
+<form action="<?= _url('extension', 'configure', 'e', urlencode($this->getName())) ?>" method="post" data-auto-leave-validation="1">
+	<input type="hidden" name="_csrf" value="<?= FreshRSS_Auth::csrfToken() ?>" />
+	<input type="hidden" name="force_rebuild_token" value="<?= $escaped($config['force_rebuild_token'] ?? '') ?>" />
+
+	<div class="form-group">
+		<label class="group-name" for="semantic-enabled">Pipeline</label>
+		<div class="group-controls">
+			<label><input id="semantic-enabled" type="checkbox" name="enabled" value="1"<?= $checked(!empty($config['enabled'])) ?> /> Enable exports and worker processing</label>
+		</div>
+	</div>
+
+	<div class="form-group">
+		<label class="group-name" for="candidate-source">Candidate source</label>
+		<div class="group-controls">
+			<select id="candidate-source" name="candidate_source" required="required">
+				<option value="">Choose a saved query</option>
+				<option value="all_entries"<?= $selectedSource === 'all_entries' ? ' selected="selected"' : '' ?>>All entries (explicitly unfiltered)</option>
+				<?php foreach ($this->savedQueries as $id => $name): ?>
+					<option value="<?= $id ?>"<?= $selectedSource === (string)$id ? ' selected="selected"' : '' ?>><?= $escaped($name) ?></option>
+				<?php endforeach; ?>
+			</select>
+			<p class="help">The rolling window is always enforced outside the saved query. Missing or ambiguous queries fail closed.</p>
+			<?php if ($this->previewCount !== null): ?>
+				<p class="help">Current bounded preview: <?= $this->previewTruncated ? 'more than ' : '' ?><?= $this->previewCount ?> entries.</p>
+			<?php endif; ?>
+		</div>
+	</div>
+
+	<div class="form-group">
+		<label class="group-name" for="embedding-model">Embedding model</label>
+		<div class="group-controls"><input class="w100" id="embedding-model" name="embedding_model" value="<?= $escaped($config['embedding_model']) ?>" required="required" /></div>
+	</div>
+
+	<div class="form-group">
+		<label class="group-name" for="similarity-threshold">Similarity threshold</label>
+		<div class="group-controls"><input id="similarity-threshold" type="number" min="0" max="1" step="0.01" name="similarity_threshold" value="<?= $escaped($config['similarity_threshold']) ?>" required="required" /></div>
+	</div>
+
+	<div class="form-group">
+		<label class="group-name" for="window-hours">Rolling window (hours)</label>
+		<div class="group-controls"><input id="window-hours" type="number" min="1" max="8760" name="window_hours" value="<?= (int)$config['window_hours'] ?>" required="required" /></div>
+	</div>
+
+	<div class="form-group">
+		<label class="group-name">Embedding input</label>
+		<div class="group-controls">
+			<label><input type="checkbox" name="include_title" value="1"<?= $checked(!empty($config['include_title'])) ?> /> Title</label><br />
+			<label><input type="checkbox" name="include_content" value="1"<?= $checked(!empty($config['include_content'])) ?> /> Content</label><br />
+			<label for="content-limit">Content character limit</label>
+			<input id="content-limit" type="number" min="0" max="100000" name="content_character_limit" value="<?= (int)$config['content_character_limit'] ?>" required="required" />
+		</div>
+	</div>
+
+	<div class="form-group">
+		<label class="group-name">Intervals and sizing</label>
+		<div class="group-controls semantic-grid">
+			<label>Candidate export (minutes) <input type="number" min="1" max="1440" name="candidate_export_interval_minutes" value="<?= (int)$config['candidate_export_interval_minutes'] ?>" required="required" /></label>
+			<label>Worker run (minutes) <input type="number" min="1" max="1440" name="worker_interval_minutes" value="<?= (int)$config['worker_interval_minutes'] ?>" required="required" /></label>
+			<label>Minimum group size <input type="number" min="2" max="1000" name="minimum_group_size" value="<?= (int)$config['minimum_group_size'] ?>" required="required" /></label>
+			<label>Embedding batch size <input type="number" min="1" max="256" name="embedding_batch_size" value="<?= (int)$config['embedding_batch_size'] ?>" required="required" /></label>
+		</div>
+	</div>
+
+	<div class="form-group">
+		<label class="group-name">Exact-title filter</label>
+		<div class="group-controls"><label><input type="checkbox" name="exact_title_enabled" value="1"<?= $checked(!empty($config['exact_title_enabled'])) ?> /> Reject exact normalized-title duplicates during ingestion</label></div>
+	</div>
+
+	<div class="form-group form-actions">
+		<div class="group-controls">
+			<button type="submit" class="btn btn-important">Save</button>
+			<button type="submit" class="btn" name="semantic_operation" value="rebuild">Save and rebuild embeddings/groups</button>
+		</div>
+	</div>
+</form>
+
+<h3>Pipeline status</h3>
+<?php $status = $this->semanticStatus; ?>
+<?php if (empty($status['available'])): ?>
+	<p class="alert alert-warn">Semantic storage is unavailable. Normal FreshRSS operation is unaffected.</p>
+<?php elseif (empty($status['configured'])): ?>
+	<p class="alert alert-warn">No candidate generation has been published yet.</p>
+<?php else: ?>
+	<?php
+	$pipeline = $status['pipeline'];
+	$worker = $status['worker'];
+	$export = $status['export'];
+	$effective = $status['config'];
+	$workerError = trim((string)($worker['latest_error'] ?? ''));
+	$exportError = trim((string)($export['last_export_error'] ?? ''));
+	$latestError = $exportError !== '' && (int)($export['last_export_error_at'] ?? 0) >= (int)($worker['latest_error_at'] ?? 0)
+		? $exportError
+		: $workerError;
+	?>
+	<dl class="semantic-status">
+		<dt>Saved query</dt><dd><?= $escaped($status['current_query_name'] ?? $effective['candidate_source']['query_name'] ?? 'Unknown') ?></dd>
+		<dt>Query fingerprint</dt><dd><code><?= $escaped($status['current_query_fingerprint'] ?? $effective['query_fingerprint'] ?? '') ?: 'Unavailable' ?></code></dd>
+		<dt>Last export attempt / success</dt><dd><?= $formatTime($export['last_export_attempt'] ?? 0) ?> / <?= $formatTime($export['last_export_success'] ?? 0) ?></dd>
+		<dt>Active generation</dt><dd><?= (int)$pipeline['active_generation'] ?> (<?= (int)$status['candidate_count'] ?> candidates)</dd>
+		<dt>Last worker attempt / success</dt><dd><?= $formatTime($worker['last_attempted_run'] ?? 0) ?> / <?= $formatTime($worker['last_successful_run'] ?? 0) ?></dd>
+		<dt>Embeddings</dt><dd><?= (int)$status['current_embeddings'] ?> current, <?= (int)$status['pending_embeddings'] ?> pending</dd>
+		<dt>Model</dt><dd><?= $escaped($effective['embedding_model'] ?? '') ?></dd>
+		<dt>Window / threshold</dt><dd><?= (int)($effective['window_hours'] ?? 0) ?> hours / <?= $escaped($effective['similarity_threshold'] ?? '') ?></dd>
+		<dt>Pending work</dt><dd><?= !empty($status['export_pending']) ? 'export ' : '' ?><?= (int)$status['pending_embeddings'] > 0 ? 'embedding ' : '' ?><?= !empty($status['grouping_pending']) ? 'regrouping' : '' ?><?= empty($status['export_pending']) && (int)$status['pending_embeddings'] === 0 && empty($status['grouping_pending']) ? 'None' : '' ?></dd>
+		<dt>Latest error</dt><dd><?= $escaped($latestError) ?: 'None' ?></dd>
+	</dl>
+<?php endif; ?>
+
+<?php if (FreshRSS_Auth::hasAccess('admin')): ?>
+	<form action="<?= _url('extension', 'configure', 'e', urlencode($this->getName())) ?>" method="post">
+		<input type="hidden" name="_csrf" value="<?= FreshRSS_Auth::csrfToken() ?>" />
+		<input type="hidden" name="semantic_operation" value="full_reset" />
+		<div class="form-group form-actions"><div class="group-controls">
+			<button type="submit" class="btn btn-attention confirm">Full semantic database reset</button>
+			<p class="help">The reset runs only while the worker lock is available and immediately republishes candidates.</p>
+		</div></div>
+	</form>
+<?php endif; ?>

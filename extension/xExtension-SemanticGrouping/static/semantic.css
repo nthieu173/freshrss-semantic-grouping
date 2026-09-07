@@ -1,0 +1,65 @@
+.semantic-page-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 1rem;
+}
+
+.semantic-group {
+	border: 1px solid var(--frss-border-color, #ccc);
+	border-radius: .25rem;
+	margin: 1rem 0;
+	overflow: hidden;
+}
+
+.semantic-member {
+	padding: .75rem 1rem;
+	border-top: 1px solid var(--frss-border-color, #ddd);
+}
+
+.semantic-member:first-child {
+	border-top: 0;
+}
+
+.semantic-representative {
+	background: color-mix(in srgb, currentColor 5%, transparent);
+}
+
+.semantic-member h2 {
+	font-size: 1.1rem;
+	margin: 0 0 .25rem;
+}
+
+.semantic-meta {
+	font-size: .85rem;
+	opacity: .75;
+}
+
+.semantic-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+	gap: .5rem 1rem;
+}
+
+.semantic-status {
+	display: grid;
+	grid-template-columns: minmax(10rem, max-content) 1fr;
+	gap: .35rem 1rem;
+}
+
+.semantic-status dt {
+	font-weight: bold;
+}
+
+.semantic-status dd {
+	margin: 0;
+	overflow-wrap: anywhere;
+}
+
+.semantic-pagination {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 1rem;
+}
+
