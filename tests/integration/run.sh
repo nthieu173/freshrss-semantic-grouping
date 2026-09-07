@@ -17,7 +17,7 @@ cleanup() {
 	"$runtime" run --rm --user 0 \
 		--volume "$integration_dir:/integration-cleanup:rw,z" \
 		--entrypoint /bin/sh "$fresh_image" \
-		-c 'chown -R 0:0 /integration-cleanup && chmod -R u+rwX /integration-cleanup' \
+		-c 'chmod -R a+rwX /integration-cleanup' \
 		>/dev/null 2>&1 || true
 	rm -rf "$integration_dir"
 	exit "$status"
