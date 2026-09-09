@@ -132,6 +132,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
     )
     store = SemanticStore(args.database)
+    if not store.database.exists():
+        LOGGER.info("semantic worker is not configured: semantic database does not exist")
+        return 0
     try:
         if (
             args.command in {"embed", "group", "cleanup"}

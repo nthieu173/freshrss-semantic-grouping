@@ -31,9 +31,10 @@ validates database schema 1 and the published configuration, then snapshots the
 active generation and configuration revision. It rechecks both inside each
 write transaction that could affect a visible result.
 
-An unknown schema, missing database, malformed configuration, or expired lease
-is reported safely. The worker never creates, migrates, renames, replaces, or
-deletes the shared database file.
+An absent database is logged as not configured and treated as a successful
+no-op. An unknown schema, malformed configuration, or expired lease is reported
+safely. The worker never creates, migrates, renames, replaces, or deletes the
+shared database file.
 
 ## Embedding phase
 
@@ -108,6 +109,7 @@ the default runtime contract.
 - A failed or out-of-memory group phase leaves the prior group transaction
   untouched.
 - A generation/revision change aborts the phase before stale publication.
+- An absent semantic database is an informational, successful no-op.
 - Disabled or expired configuration is a successful no-op.
 - Error state is bounded and sanitized; failures never affect FreshRSS data or
   health.

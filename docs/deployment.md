@@ -38,9 +38,10 @@ podman run --rm \
 ```
 
 Schedule that command from a fixed ten-minute timer. `run` exits successfully
-without child processes when the pipeline is disabled, the producer lease is
-expired, the logical worker interval has not elapsed, or another worker owns
-the advisory lock.
+without child processes when the semantic database does not exist yet, the
+pipeline is disabled, the producer lease is expired, the logical worker
+interval has not elapsed, or another worker owns the advisory lock. An absent
+database is logged at informational level as not configured.
 
 ## Failure behavior
 

@@ -99,8 +99,12 @@ fresh_test verify-empty-groups
 fresh_test disable-pipeline
 worker run
 
-if worker --database /semantic-data/missing.sqlite validate-config; then
-	echo 'Worker unexpectedly created or accepted a missing shared database' >&2
+if ! worker --database /semantic-data/missing.sqlite validate-config; then
+	echo 'Worker did not accept an expected unconfigured state' >&2
+	exit 1
+fi
+if [ -e "$integration_dir/semantic-data/missing.sqlite" ]; then
+	echo 'Worker unexpectedly created a missing shared database' >&2
 	exit 1
 fi
 "$runtime" exec --workdir /var/www/FreshRSS "$container_name" php -f cli/health.php

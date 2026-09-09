@@ -1,11 +1,25 @@
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
+from pathlib import Path
 
 import pytest
 
 from freshrss_semantic.cli import AlreadyRunning, _run_due, main, worker_lock
+
+
+def test_missing_database_is_an_unconfigured_success(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    database = tmp_path / "semantic.sqlite"
+
+    with caplog.at_level(logging.INFO):
+        assert main(["--database", str(database), "run"]) == 0
+
+    assert "not configured" in caplog.text
+    assert not database.exists()
 
 
 def test_worker_lock_is_non_overlapping(database) -> None:
