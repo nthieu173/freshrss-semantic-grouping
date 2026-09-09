@@ -2,8 +2,7 @@
   "name": "Semantic grouping",
   "author": "freshrss-semantic-grouping contributors",
   "description": "Exact-title filtering and offline semantic article groups",
-  "version": "0.1.0",
+  "version": "0.2.1",
   "entrypoint": "SemanticGrouping",
   "type": "user"
 }
-
