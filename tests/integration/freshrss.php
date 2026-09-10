@@ -9,6 +9,7 @@ declare(strict_types=1);
  *   php /integration/freshrss.php verify-exact-disabled
  *   php /integration/freshrss.php verify-pipeline-disabled-exact
  *   php /integration/freshrss.php verify-groups
+ *   php /integration/freshrss.php verify-page
  *   php /integration/freshrss.php update-entry
  *   php /integration/freshrss.php change-query
  *   php /integration/freshrss.php verify-empty-groups
@@ -462,6 +463,34 @@ function verifyGroups(): void {
 	same($ids, $expected, 'Grouped page did not resolve the current FreshRSS entries');
 }
 
+function verifyPage(): void {
+	configuredExtension();
+	Minz_Session::_param('passwordHash', FreshRSS_Context::userConf()->passwordHash);
+	check(FreshRSS_Auth::giveAccess(), 'Could not authenticate the semantic page render.');
+
+	$previousRequest = Minz_Request::currentRequest();
+	try {
+		Minz_Request::_controllerName('semantic');
+		Minz_Request::_actionName('index');
+		Minz_Request::_params([]);
+		require_once __DIR__ . '/Controllers/semanticController.php';
+		$controller = new FreshExtension_semantic_Controller();
+		$controller->firstAction();
+		$controller->indexAction();
+		$rendered = $controller->view()->renderToString();
+	} finally {
+		Minz_Request::_controllerName($previousRequest['c']);
+		Minz_Request::_actionName($previousRequest['a']);
+		Minz_Request::_params($previousRequest['params']);
+	}
+
+	check(str_contains($rendered, 'id="aside_feed"'), 'Authenticated semantic page did not render the feed sidebar.');
+	check(str_contains($rendered, 'Integration label'), 'Authenticated semantic page did not render FreshRSS labels.');
+	check(str_contains($rendered, 'Integration included feed'), 'Authenticated semantic page did not render FreshRSS categories.');
+	check(str_contains($rendered, '<h1>Semantic Groups</h1>'), 'Authenticated semantic page did not render its heading.');
+	check(str_contains($rendered, 'Semantic city council approves climate plan'), 'Authenticated semantic page did not render published groups.');
+}
+
 function verifyExactDisabled(): void {
 	$extension = configuredExtension();
 	$configuration = FreshRSS_Context::userConf();
@@ -606,6 +635,9 @@ try {
 			break;
 		case 'verify-groups':
 			verifyGroups();
+			break;
+		case 'verify-page':
+			verifyPage();
 			break;
 		case 'verify-exact-disabled':
 			verifyExactDisabled();

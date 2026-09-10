@@ -12,6 +12,17 @@ final class FreshExtension_semantic_Controller extends FreshRSS_ActionController
 	}
 
 	public function indexAction(): void {
+		$this->view->categories = FreshRSS_Context::categories();
+		$this->view->nbUnreadTags = 0;
+		if (Minz_Request::paramBoolean('ajax')) {
+			$this->view->tags = FreshRSS_Context::labels(precounts: false);
+		} else {
+			$this->view->tags = FreshRSS_Context::labels(precounts: true);
+			foreach ($this->view->tags as $tag) {
+				$this->view->nbUnreadTags += $tag->nbUnread();
+			}
+		}
+
 		$page = max(1, Minz_Request::paramInt('page'));
 		try {
 			$repository = new SemanticGrouping_GroupRepository();
@@ -26,4 +37,3 @@ final class FreshExtension_semantic_Controller extends FreshRSS_ActionController
 		}
 	}
 }
-

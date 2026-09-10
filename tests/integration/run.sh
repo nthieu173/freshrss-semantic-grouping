@@ -85,6 +85,7 @@ fi
 
 worker run
 fresh_test verify-groups
+fresh_test verify-page
 
 fresh_test update-entry
 worker embed

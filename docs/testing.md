@@ -32,6 +32,8 @@ The integration scenario verifies:
 - an export activates only a complete native-query result;
 - the worker sees only `/semantic-data`, embeds with the real bundled Model2Vec
   model, and groups through SemHash/USearch;
+- the authenticated Semantic Groups page renders published groups with the
+  FreshRSS feed sidebar, categories, and labels;
 - an article source change replaces only its stale embedding;
 - a query edit retains old groups until an atomic replacement is ready;
 - the grouped page resolves current FreshRSS entries safely;
@@ -72,4 +74,3 @@ reruns PHP, Python, and full integration checks, then:
 Infrastructure consumers pin the paired extension artifact/checksum and worker
 image digest. Schema upgrades stop the worker, install the paired release, let
 the extension migrate transactionally, and start the new worker afterward.
-
