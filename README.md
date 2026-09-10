@@ -42,8 +42,8 @@ does not mark, delete, or otherwise mutate FreshRSS entries.
    directory and enable it for the target user.
 2. Mount a directory owned by the shared group (GID 33, mode `2770`) at
    `/semantic-data` in both containers.
-3. Select a non-empty FreshRSS saved query, or explicitly select **All
-   entries**, in the extension configuration.
+3. Keep the default **All entries** candidate source, or select a non-empty
+   FreshRSS saved query, in the extension configuration.
 4. Run the worker every ten minutes. Its logical interval and producer lease
    make extra timer invocations inexpensive:
 

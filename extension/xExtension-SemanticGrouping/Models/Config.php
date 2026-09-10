@@ -11,9 +11,9 @@ final class SemanticGrouping_Config {
 			'schema_version' => self::SCHEMA_VERSION,
 			'enabled' => true,
 			'candidate_source' => [
-				'mode' => 'saved_query',
+				'mode' => 'all_entries',
 				'query_id' => null,
-				'query_name' => '',
+				'query_name' => 'All entries',
 			],
 			'embedding_model' => 'minishlab/potion-base-8M',
 			'similarity_threshold' => 0.90,

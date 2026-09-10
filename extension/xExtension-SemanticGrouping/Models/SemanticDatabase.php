@@ -15,6 +15,12 @@ final class SemanticGrouping_SemanticDatabase {
 		if ($migrate && !is_dir($directory)) {
 			throw new RuntimeException('Semantic data directory is missing.');
 		}
+		if ($migrate && (!is_writable($directory) || !is_executable($directory))) {
+			throw new RuntimeException('Semantic data directory is not writable by FreshRSS.');
+		}
+		if ($migrate && is_file($this->path) && !is_writable($this->path)) {
+			throw new RuntimeException('Semantic database is not writable by FreshRSS.');
+		}
 		$pdo = $this->connect($queryOnly);
 		if ($migrate) {
 			$this->migrate($pdo);

@@ -160,6 +160,55 @@ function pipelineConfig(): array {
 	]);
 }
 
+function configureWhileDisabled(): void {
+	FreshRSS_Context::initUser('admin');
+	$extension = extensionInstance();
+	check(!$extension->isEnabled(), 'Extension unexpectedly enabled before its configuration regression test.');
+	$params = [
+		'candidate_source' => 'all_entries',
+		'enabled' => '1',
+		'embedding_model' => 'integration/pre-enable',
+		'similarity_threshold' => '0.75',
+		'window_hours' => '48',
+		'candidate_export_interval_minutes' => '20',
+		'worker_interval_minutes' => '40',
+		'minimum_group_size' => '3',
+		'include_title' => '1',
+		'content_character_limit' => '1234',
+		'exact_title_enabled' => '1',
+		'embedding_batch_size' => '64',
+		'force_rebuild_token' => '',
+	];
+	$previousMethod = $_SERVER['REQUEST_METHOD'] ?? null;
+	$previousParams = Minz_Request::params();
+	try {
+		$_SERVER['REQUEST_METHOD'] = 'POST';
+		Minz_Request::_params($params);
+		$extension->handleConfigureAction();
+		same($extension->configurationErrors, [], 'Saving configuration while disabled failed');
+		same($extension->configuration['candidate_source']['mode'], 'all_entries', 'All entries was not saved before enabling');
+		same($extension->configuration['embedding_model'], 'integration/pre-enable', 'Saved settings were reset before enabling');
+		same($extension->configuration['force_rebuild_token'], '', 'Normal save unexpectedly requested a rebuild');
+
+		$params['semantic_operation'] = 'rebuild';
+		Minz_Request::_params($params);
+		$extension->handleConfigureAction();
+		same($extension->configurationErrors, [], 'Saving a rebuild request while disabled failed');
+		check($extension->configuration['force_rebuild_token'] !== '', 'Save and rebuild did not rotate the rebuild token');
+		FreshRSS_Context::initUser('admin');
+		$stored = FreshRSS_Context::userConf()->extensions[SEMANTIC_EXTENSION_NAME] ?? null;
+		check(is_array($stored), 'Configuration was not persisted through FreshRSS');
+		same($stored, $extension->configuration, 'Reloaded FreshRSS configuration differs from the submitted settings');
+	} finally {
+		Minz_Request::_params($previousParams);
+		if ($previousMethod === null) {
+			unset($_SERVER['REQUEST_METHOD']);
+		} else {
+			$_SERVER['REQUEST_METHOD'] = $previousMethod;
+		}
+	}
+}
+
 function installAndEnable(): SemanticGroupingExtension {
 	FreshRSS_Context::initUser('admin');
 	$extension = extensionInstance();
@@ -184,6 +233,7 @@ function configuredExtension(): SemanticGroupingExtension {
 }
 
 function setup(): void {
+	configureWhileDisabled();
 	$extension = installAndEnable();
 	$now = time();
 	$categoryDao = FreshRSS_Factory::createCategoryDao();

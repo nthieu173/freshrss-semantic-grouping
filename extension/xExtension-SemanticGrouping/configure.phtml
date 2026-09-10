@@ -40,7 +40,7 @@ $formatTime = static function (mixed $value): string {
 					<option value="<?= $id ?>"<?= $selectedSource === (string)$id ? ' selected="selected"' : '' ?>><?= $escaped($name) ?></option>
 				<?php endforeach; ?>
 			</select>
-			<p class="help">The rolling window is always enforced outside the saved query. Missing or ambiguous queries fail closed.</p>
+			<p class="help">The rolling window is always enforced in addition to the source selection. Missing or ambiguous saved queries fail closed.</p>
 			<?php if ($this->previewCount !== null): ?>
 				<p class="help">Current bounded preview: <?= $this->previewTruncated ? 'more than ' : '' ?><?= $this->previewCount ?> entries.</p>
 			<?php endif; ?>
@@ -114,7 +114,7 @@ $formatTime = static function (mixed $value): string {
 		: $workerError;
 	?>
 	<dl class="semantic-status">
-		<dt>Saved query</dt><dd><?= $escaped($status['current_query_name'] ?? $effective['candidate_source']['query_name'] ?? 'Unknown') ?></dd>
+		<dt>Candidate source</dt><dd><?= $escaped($status['current_query_name'] ?? $effective['candidate_source']['query_name'] ?? 'Unknown') ?></dd>
 		<dt>Query fingerprint</dt><dd><code><?= $escaped($status['current_query_fingerprint'] ?? $effective['query_fingerprint'] ?? '') ?: 'Unavailable' ?></code></dd>
 		<dt>Last export attempt / success</dt><dd><?= $formatTime($export['last_export_attempt'] ?? 0) ?> / <?= $formatTime($export['last_export_success'] ?? 0) ?></dd>
 		<dt>Active generation</dt><dd><?= (int)$pipeline['active_generation'] ?> (<?= (int)$status['candidate_count'] ?> candidates)</dd>

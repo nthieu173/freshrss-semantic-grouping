@@ -1,9 +1,14 @@
 <?php
 declare(strict_types=1);
 
-// install() runs before FreshRSS registers the extension autoloader.
+// install() and configuration of a disabled extension run before FreshRSS
+// registers the extension autoloader. Load every model those paths use.
 require_once __DIR__ . '/Models/Config.php';
 require_once __DIR__ . '/Models/SemanticDatabase.php';
+require_once __DIR__ . '/Models/CandidateSource.php';
+require_once __DIR__ . '/Models/TextNormalizer.php';
+require_once __DIR__ . '/Models/CandidateExporter.php';
+require_once __DIR__ . '/Models/GroupRepository.php';
 
 final class SemanticGroupingExtension extends Minz_Extension {
 	/** @var array<string,mixed> */

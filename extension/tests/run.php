@@ -119,10 +119,20 @@ check(SemanticGrouping_Config::groupingFingerprint($config) === 'e6d4cc696bdc21c
 $invalidThreshold = $config;
 $invalidThreshold['similarity_threshold'] = NAN;
 check(SemanticGrouping_Config::validate($invalidThreshold) !== [], 'non-numeric similarity threshold was accepted');
-$disabledWithoutSource = SemanticGrouping_Config::defaults();
+$defaults = SemanticGrouping_Config::defaults();
+check($defaults['candidate_source'] === [
+	'mode' => 'all_entries',
+	'query_id' => null,
+	'query_name' => 'All entries',
+], 'All entries is not the default candidate source');
+check(SemanticGrouping_Config::validate($defaults) === [], 'default configuration did not validate');
+$disabledWithoutSource = $defaults;
+$disabledWithoutSource['candidate_source'] = ['mode' => 'saved_query', 'query_id' => null, 'query_name' => ''];
 $disabledWithoutSource['enabled'] = false;
 check(SemanticGrouping_Config::validate($disabledWithoutSource) === [], 'missing query prevented fail-safe pipeline disable');
-check(SemanticGrouping_Config::validate(SemanticGrouping_Config::defaults()) !== [], 'enabled pipeline accepted a missing query');
+$enabledWithoutSource = $disabledWithoutSource;
+$enabledWithoutSource['enabled'] = true;
+check(SemanticGrouping_Config::validate($enabledWithoutSource) !== [], 'enabled pipeline accepted a missing query');
 $database->activateGeneration($pdo, $generation, 1, 'revision', $config, 10000, 100);
 check((int)$pdo->query('SELECT active_generation FROM pipeline_config')->fetchColumn() === $generation, 'generation activation failed');
 

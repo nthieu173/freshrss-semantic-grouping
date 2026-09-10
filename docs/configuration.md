@@ -7,7 +7,7 @@ fingerprint into `pipeline_config`; the worker does not read FreshRSS files.
 | Setting | Default | Effect |
 |---|---:|---|
 | Pipeline enabled | yes | Enables export and renews the producer lease. Turning it off publishes a disabled revision. |
-| Candidate source | saved query | Executes exactly one native FreshRSS query. **All entries** is an explicit separate choice. |
+| Candidate source | All entries | Includes every entry in the rolling window. A native FreshRSS saved query can be selected instead. |
 | Embedding model | `minishlab/potion-base-8M` | Changes invalidate embeddings and groups. |
 | Similarity threshold | `0.90` | Changes groups without invalidating vectors. |
 | Rolling window | 72 hours | An outer received-date constraint independent of the saved query. |
