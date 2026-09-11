@@ -60,13 +60,13 @@ $this->partial('aside_feed');
 							<?php if ($member['url'] !== ''): ?></a><?php endif; ?>
 						</h2>
 						<?php if ($showMemberRoles && $member['representative']): ?>
-							<button class="btn semantic-group-toggle" type="button" aria-expanded="true" aria-controls="<?= $memberContainerId ?>" data-semantic-group-toggle>Collapse group</button>
+							<button class="btn semantic-group-toggle" type="button" aria-expanded="true" aria-controls="<?= $memberContainerId ?>" data-semantic-group-toggle>Collapse</button>
 						<?php endif; ?>
 					</header>
 					<p class="semantic-meta">
-						<?php if ($showMemberRoles): ?><?= $member['representative'] ? 'Representative' : 'Member' ?> · <?php endif; ?><?= $escaped($member['date']) ?>
+						<?= $escaped($member['date']) ?>
 						<?php if (!$member['representative'] && $member['similarity'] !== null): ?> · similarity <?= number_format((float)$member['similarity'], 3) ?><?php endif; ?>
-						<?= $member['is_read'] ? ' · read' : ' · unread' ?><?= $member['is_favorite'] ? ' · favourite' : '' ?>
+						<?= $member['is_favorite'] ? ' · favourite' : '' ?>
 					</p>
 					<?php if ($member['excerpt'] !== ''): ?><p><?= $escaped($member['excerpt']) ?></p><?php endif; ?>
 				</article>
