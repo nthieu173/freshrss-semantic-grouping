@@ -151,9 +151,11 @@ a 90-minute minimum. The worker performs no new work after expiry or when the
 published pipeline is disabled. This makes stale configuration fail safe when
 FreshRSS stops or cannot write a final disabled revision.
 
-The host can invoke `freshrss-semantic run` on a fixed ten-minute timer. The
-command checks the lease, enabled state, logical worker interval, and advisory
-worker lock before spawning separate cleanup, embed, and group phases.
+The host invokes `freshrss-semantic run` every 10 minutes with a stable,
+randomized per-host offset of up to 10 minutes. Successive invocations remain
+exactly 10 minutes apart. The command checks the lease, enabled state,
+published generation and grouping fingerprint, pending embeddings, and
+advisory worker lock before spawning separate cleanup, embed, and group phases.
 
 ## Consistency and failure invariants
 

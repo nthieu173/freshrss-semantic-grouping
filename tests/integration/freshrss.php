@@ -151,7 +151,6 @@ function pipelineConfig(): array {
 		'similarity_threshold' => 0.25,
 		'window_hours' => 72,
 		'candidate_export_interval_minutes' => 30,
-		'worker_interval_minutes' => 1,
 		'minimum_group_size' => 2,
 		'include_title' => true,
 		'include_content' => false,
@@ -172,7 +171,6 @@ function configureWhileDisabled(): void {
 		'similarity_threshold' => '0.75',
 		'window_hours' => '48',
 		'candidate_export_interval_minutes' => '20',
-		'worker_interval_minutes' => '40',
 		'minimum_group_size' => '3',
 		'include_title' => '1',
 		'content_character_limit' => '1234',
@@ -189,13 +187,7 @@ function configureWhileDisabled(): void {
 		same($extension->configurationErrors, [], 'Saving configuration while disabled failed');
 		same($extension->configuration['candidate_source']['mode'], 'all_entries', 'All entries was not saved before enabling');
 		same($extension->configuration['embedding_model'], 'integration/pre-enable', 'Saved settings were reset before enabling');
-		same($extension->configuration['force_rebuild_token'], '', 'Normal save unexpectedly requested a rebuild');
-
-		$params['semantic_operation'] = 'rebuild';
-		Minz_Request::_params($params);
-		$extension->handleConfigureAction();
-		same($extension->configurationErrors, [], 'Saving a rebuild request while disabled failed');
-		check($extension->configuration['force_rebuild_token'] !== '', 'Save and rebuild did not rotate the rebuild token');
+		same($extension->configuration['force_rebuild_token'], '', 'Saving unexpectedly changed the rebuild token');
 		FreshRSS_Context::initUser('admin');
 		$stored = FreshRSS_Context::userConf()->extensions[SEMANTIC_EXTENSION_NAME] ?? null;
 		check(is_array($stored), 'Configuration was not persisted through FreshRSS');

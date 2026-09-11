@@ -73,12 +73,14 @@ $formatTime = static function (mixed $value): string {
 	</div>
 
 	<div class="form-group">
-		<label class="group-name">Intervals and sizing</label>
-		<div class="group-controls semantic-grid">
-			<label>Candidate export (minutes) <input type="number" min="1" max="1440" name="candidate_export_interval_minutes" value="<?= (int)$config['candidate_export_interval_minutes'] ?>" required="required" /></label>
-			<label>Worker run (minutes) <input type="number" min="1" max="1440" name="worker_interval_minutes" value="<?= (int)$config['worker_interval_minutes'] ?>" required="required" /></label>
-			<label>Minimum group size <input type="number" min="1" max="1000" name="minimum_group_size" value="<?= (int)$config['minimum_group_size'] ?>" required="required" /></label>
-			<label>Embedding batch size <input type="number" min="1" max="256" name="embedding_batch_size" value="<?= (int)$config['embedding_batch_size'] ?>" required="required" /></label>
+		<label class="group-name">Refresh and sizing</label>
+		<div class="group-controls">
+			<div class="semantic-grid">
+				<label>Refresh interval (minutes) <input type="number" min="10" max="1440" step="10" name="candidate_export_interval_minutes" value="<?= (int)$config['candidate_export_interval_minutes'] ?>" required="required" /></label>
+				<label>Minimum group size <input type="number" min="1" max="1000" name="minimum_group_size" value="<?= (int)$config['minimum_group_size'] ?>" required="required" /></label>
+				<label>Embedding batch size <input type="number" min="1" max="256" name="embedding_batch_size" value="<?= (int)$config['embedding_batch_size'] ?>" required="required" /></label>
+			</div>
+			<p class="help">The worker checks for exported changes every 10 minutes at a stable, randomized offset of up to 10 minutes. Values below 10 minutes or between 10-minute increments cannot refresh groups sooner.</p>
 		</div>
 	</div>
 
@@ -90,7 +92,6 @@ $formatTime = static function (mixed $value): string {
 	<div class="form-group form-actions">
 		<div class="group-controls">
 			<button type="submit" class="btn btn-important">Save</button>
-			<button type="submit" class="btn" name="semantic_operation" value="rebuild">Save and rebuild embeddings/groups</button>
 		</div>
 	</div>
 </form>

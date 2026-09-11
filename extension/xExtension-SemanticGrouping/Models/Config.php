@@ -19,7 +19,6 @@ final class SemanticGrouping_Config {
 			'similarity_threshold' => 0.90,
 			'window_hours' => 72,
 			'candidate_export_interval_minutes' => 30,
-			'worker_interval_minutes' => 60,
 			'minimum_group_size' => 1,
 			'include_title' => true,
 			'include_content' => false,
@@ -34,6 +33,11 @@ final class SemanticGrouping_Config {
 	/** @param array<string,mixed> $stored @return array<string,mixed> */
 	public static function merge(array $stored): array {
 		$config = array_replace(self::defaults(), $stored);
+		unset($config['worker_interval_minutes']);
+		$refreshInterval = $config['candidate_export_interval_minutes'] ?? null;
+		if (is_int($refreshInterval) && $refreshInterval >= 1 && $refreshInterval <= 1440) {
+			$config['candidate_export_interval_minutes'] = min(1440, max(10, intdiv($refreshInterval + 9, 10) * 10));
+		}
 		$source = is_array($stored['candidate_source'] ?? null) ? $stored['candidate_source'] : [];
 		$config['candidate_source'] = array_replace(self::defaults()['candidate_source'], $source);
 		return $config;
@@ -54,7 +58,6 @@ final class SemanticGrouping_Config {
 			'similarity_threshold' => is_numeric($thresholdValue) ? (float)$thresholdValue : NAN,
 			'window_hours' => Minz_Request::paramInt('window_hours'),
 			'candidate_export_interval_minutes' => Minz_Request::paramInt('candidate_export_interval_minutes'),
-			'worker_interval_minutes' => Minz_Request::paramInt('worker_interval_minutes'),
 			'minimum_group_size' => Minz_Request::paramInt('minimum_group_size'),
 			'include_title' => Minz_Request::paramBoolean('include_title'),
 			'include_content' => Minz_Request::paramBoolean('include_content'),
@@ -81,8 +84,12 @@ final class SemanticGrouping_Config {
 			$errors[] = 'Similarity threshold must be between 0 and 1.';
 		}
 		self::validateInt($config, 'window_hours', 1, 8760, $errors);
-		self::validateInt($config, 'candidate_export_interval_minutes', 1, 1440, $errors);
-		self::validateInt($config, 'worker_interval_minutes', 1, 1440, $errors);
+		$refreshInterval = $config['candidate_export_interval_minutes'] ?? null;
+		if (!is_int($refreshInterval) || $refreshInterval < 10 || $refreshInterval > 1440) {
+			$errors[] = 'Refresh interval must be between 10 and 1440 minutes.';
+		} elseif ($refreshInterval % 10 !== 0) {
+			$errors[] = 'Refresh interval must be a multiple of 10 minutes.';
+		}
 		self::validateInt($config, 'minimum_group_size', 1, 1000, $errors);
 		self::validateInt($config, 'content_character_limit', 0, 100000, $errors);
 		self::validateInt($config, 'embedding_batch_size', 1, 256, $errors);

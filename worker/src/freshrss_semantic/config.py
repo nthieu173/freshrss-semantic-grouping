@@ -54,7 +54,6 @@ class WorkerConfig:
     embedding_model: str
     similarity_threshold: float
     window_hours: int
-    worker_interval_minutes: int
     minimum_group_size: int
     include_title: bool
     include_content: bool
@@ -87,7 +86,6 @@ class WorkerConfig:
             embedding_model=model.strip(),
             similarity_threshold=_float(data, "similarity_threshold", 0.0, 1.0),
             window_hours=_int(data, "window_hours", 1, 24 * 365),
-            worker_interval_minutes=_int(data, "worker_interval_minutes", 1, 24 * 60),
             minimum_group_size=_int(data, "minimum_group_size", 1, 1000),
             include_title=include_title,
             include_content=include_content,

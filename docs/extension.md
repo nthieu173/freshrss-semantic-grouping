@@ -70,8 +70,8 @@ and other FreshRSS fields remain in FreshRSS.
 
 Maintenance acquires a non-blocking per-user file lock. It returns when another
 exporter is active or when the configured interval has not elapsed and neither
-the settings nor expanded query fingerprint changed. A forced save/rebuild can
-bypass the interval.
+the settings nor expanded query fingerprint changed. Saving changed settings
+or changing the query definition bypasses the interval.
 
 The exporter allocates a new incomplete generation, streams immutable article
 versions and memberships in batches of 200, and activates the completed
@@ -113,4 +113,3 @@ Status includes the selected source and current definition fingerprint, export
 attempt/success, active generation and candidate count, worker attempt/success,
 pending embedding/group work, model/window/threshold, producer lease, and the
 latest bounded error summary. It never exposes traces or host paths.
-

@@ -19,7 +19,6 @@ def worker_config(**overrides: object) -> dict[str, object]:
         "similarity_threshold": 0.9,
         "window_hours": 72,
         "candidate_export_interval_minutes": 30,
-        "worker_interval_minutes": 60,
         "minimum_group_size": 1,
         "include_title": True,
         "include_content": False,

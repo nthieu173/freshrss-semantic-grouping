@@ -81,7 +81,7 @@ jobs:
           config = {
               'enabled': True, 'embedding_model': 'minishlab/potion-base-8M',
               'similarity_threshold': .25, 'window_hours': 72,
-              'worker_interval_minutes': 60, 'minimum_group_size': 2,
+              'minimum_group_size': 2,
               'include_title': True, 'include_content': False,
               'content_character_limit': 2000, 'embedding_batch_size': 128,
               'normalization_version': 1, 'query_fingerprint': 'smoke',

@@ -101,9 +101,6 @@ final class SemanticGroupingExtension extends Minz_Extension {
 				$this->handleFullReset();
 			} else {
 				$config = SemanticGrouping_Config::fromRequest();
-				if ($operation === 'rebuild') {
-					$config['force_rebuild_token'] = bin2hex(random_bytes(16));
-				}
 				$this->configurationErrors = SemanticGrouping_Config::validate($config);
 				if ($this->configurationErrors === [] && !empty($config['enabled'])) {
 					try {
@@ -119,9 +116,7 @@ final class SemanticGroupingExtension extends Minz_Extension {
 					if (empty($config['enabled'])) {
 						(new SemanticGrouping_CandidateExporter($config))->runSafely(force: true);
 					}
-					$this->notice = $operation === 'rebuild'
-						? 'Embedding and grouping rebuild requested; the next export will publish the revision.'
-						: 'Semantic grouping configuration saved.';
+					$this->notice = 'Semantic grouping configuration saved.';
 				}
 			}
 		}

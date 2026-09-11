@@ -11,8 +11,7 @@ fingerprint into `pipeline_config`; the worker does not read FreshRSS files.
 | Embedding model | `minishlab/potion-base-8M` | Changes invalidate embeddings and groups. |
 | Similarity threshold | `0.90` | Changes groups without invalidating vectors. |
 | Rolling window | 72 hours | An outer received-date constraint independent of the saved query. |
-| Export interval | 30 minutes | Minimum reconciliation interval; config/query changes bypass it. |
-| Worker interval | 60 minutes | Logical interval checked by `run`; the host timer can remain fixed. |
+| Refresh interval | 30 minutes | Candidate reconciliation interval in 10-minute increments; config/query changes bypass it. |
 | Minimum group size | 1 | Smaller groups are not published or displayed. A value of 1 allows single-source stories. |
 | Title/content input | title only | Selected fields become canonical embedding text. |
 | Content limit | 2000 characters | Applied after HTML decoding, markup removal, Unicode normalization, and whitespace normalization. |
@@ -48,3 +47,9 @@ Every complete export renews the producer lease to three export intervals with
 a 90-minute minimum. The worker performs no embedding or grouping after the
 lease expires. One missed FreshRSS maintenance run therefore does not stop a
 normally active pipeline.
+
+The worker checks for a changed generation every 10 minutes at a stable,
+randomized per-host offset of up to 10 minutes. The offset spreads work across
+hosts without changing the 10-minute interval between checks. Refresh values
+below 10 minutes or between 10-minute increments cannot make new groups visible
+sooner, so the configuration accepts only 10-minute increments.

@@ -48,12 +48,17 @@ def _run_due(store: SemanticStore, now: int) -> bool:
     snapshot = store.load_snapshot()
     if not snapshot.config.enabled or snapshot.producer_lease_until <= now:
         return False
-    previous = store.get_state("last_attempted_run", "0")
+
     try:
-        last_attempt = int(previous)
+        published_generation = int(store.get_state("last_published_generation", "0"))
     except ValueError:
-        last_attempt = 0
-    return now - last_attempt >= snapshot.config.worker_interval_minutes * 60
+        published_generation = 0
+    if published_generation != snapshot.active_generation:
+        return True
+    if store.get_state("current_grouping_fingerprint") != snapshot.config.grouping_fingerprint:
+        return True
+    with store.connection() as db:
+        return store.pending_count(db, snapshot) > 0
 
 
 def _child(command: str, database: str) -> None:

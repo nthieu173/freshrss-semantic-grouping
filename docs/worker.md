@@ -21,8 +21,9 @@ exit without overlapping mutations.
 
 Before spawning work, `run` validates schema and configuration, then exits
 successfully when the pipeline is disabled, the producer lease expired, or the
-logical worker interval has not elapsed. A fixed host timer can therefore be
-more frequent than the configured interval.
+active generation already has current embeddings and published groups. The host
+invokes it every 10 minutes with a stable, randomized per-host offset of up to
+10 minutes, keeping successive checks exactly 10 minutes apart.
 
 ## Configuration snapshot
 

@@ -39,6 +39,27 @@ def test_disabled_and_expired_pipeline_is_not_due(populate) -> None:
     assert not _run_due(store, 1)
 
 
+def test_worker_is_due_only_for_unpublished_or_stale_work(populate) -> None:
+    store = populate(entries=0)
+    snapshot = store.load_snapshot()
+    assert _run_due(store, 1)
+
+    store.set_state("last_published_generation", str(snapshot.active_generation))
+    store.set_state("current_grouping_fingerprint", snapshot.config.grouping_fingerprint)
+    assert not _run_due(store, 1)
+
+    store.set_state("current_grouping_fingerprint", "stale")
+    assert _run_due(store, 1)
+
+
+def test_worker_is_due_when_an_active_embedding_is_missing(populate) -> None:
+    store = populate(entries=1)
+    snapshot = store.load_snapshot()
+    store.set_state("last_published_generation", str(snapshot.active_generation))
+    store.set_state("current_grouping_fingerprint", snapshot.config.grouping_fingerprint)
+    assert _run_due(store, 1)
+
+
 def test_direct_worker_phase_respects_the_shared_worker_lock(populate) -> None:
     store = populate(entries=1)
     with worker_lock(store.database):

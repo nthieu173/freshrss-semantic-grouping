@@ -37,11 +37,26 @@ podman run --rm \
   ghcr.io/OWNER/freshrss-semantic-grouping:VERSION run
 ```
 
-Schedule that command from a fixed ten-minute timer. `run` exits successfully
-without child processes when the semantic database does not exist yet, the
-pipeline is disabled, the producer lease is expired, the logical worker
-interval has not elapsed, or another worker owns the advisory lock. An absent
-database is logged at informational level as not configured.
+Schedule that command every 10 minutes with a stable, randomized per-host offset
+of up to 10 minutes. For example, a systemd timer can use:
+
+```ini
+[Timer]
+OnCalendar=*:0/10
+RandomizedDelaySec=10m
+FixedRandomDelay=yes
+AccuracySec=1s
+Persistent=true
+```
+
+`FixedRandomDelay=yes` keeps that host's offset identical for every firing. For
+example, an 8-minute, 42-second offset produces `:08:42`, `:18:42`, and
+`:28:42`, rather than varying the gap between runs.
+
+`run` exits successfully without child processes when the semantic database
+does not exist yet, the pipeline is disabled, the producer lease is expired,
+the active generation has no pending work, or another worker owns the advisory
+lock. An absent database is logged at informational level as not configured.
 
 ## Failure behavior
 

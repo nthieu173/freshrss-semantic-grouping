@@ -146,6 +146,16 @@ $invalidThreshold['similarity_threshold'] = NAN;
 check(SemanticGrouping_Config::validate($invalidThreshold) !== [], 'non-numeric similarity threshold was accepted');
 $defaults = SemanticGrouping_Config::defaults();
 check($defaults['minimum_group_size'] === 1, 'Minimum group size does not default to one');
+check(!array_key_exists('worker_interval_minutes', $defaults), 'Worker interval remains user-configurable');
+$legacyConfig = SemanticGrouping_Config::merge([
+	'candidate_export_interval_minutes' => 11,
+	'worker_interval_minutes' => 60,
+]);
+check($legacyConfig['candidate_export_interval_minutes'] === 20, 'Legacy refresh interval was not rounded to a worker boundary');
+check(!array_key_exists('worker_interval_minutes', $legacyConfig), 'Legacy worker interval was not removed');
+$invalidRefresh = $defaults;
+$invalidRefresh['candidate_export_interval_minutes'] = 15;
+check(SemanticGrouping_Config::validate($invalidRefresh) !== [], 'Refresh interval accepted a value between worker boundaries');
 check($defaults['candidate_source'] === [
 	'mode' => 'all_entries',
 	'query_id' => null,

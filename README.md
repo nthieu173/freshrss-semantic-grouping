@@ -44,8 +44,9 @@ does not mark, delete, or otherwise mutate FreshRSS entries.
    `/semantic-data` in both containers.
 3. Keep the default **All entries** candidate source, or select a non-empty
    FreshRSS saved query, in the extension configuration.
-4. Run the worker every ten minutes. Its logical interval and producer lease
-   make extra timer invocations inexpensive:
+4. Run the worker every ten minutes with a stable, randomized per-host offset
+   of up to ten minutes. Published generation state and the producer lease make
+   no-op timer invocations inexpensive:
 
    ```sh
    freshrss-semantic run
