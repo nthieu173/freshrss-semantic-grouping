@@ -53,7 +53,13 @@ final class SemanticGrouping_GroupRepository {
 		$pageSize = min(100, max(1, $pageSize));
 		$pdo = $this->database->open(false, true);
 		$total = (int)$pdo->query('SELECT COUNT(*) FROM groups')->fetchColumn();
-		$statement = $pdo->prepare('SELECT * FROM groups ORDER BY generated_at DESC, group_id LIMIT ? OFFSET ?');
+		$statement = $pdo->prepare('SELECT g.* FROM groups g
+			JOIN group_members gm ON gm.group_id=g.group_id
+			LEFT JOIN candidate_members cm ON cm.generation=g.selection_generation AND cm.entry_id=gm.entry_id
+			LEFT JOIN article_inputs ai ON ai.entry_id=cm.entry_id AND ai.source_hash=cm.source_hash
+			GROUP BY g.group_id
+			ORDER BY MAX(ai.received_at) DESC, g.group_id
+			LIMIT ? OFFSET ?');
 		$statement->bindValue(1, $pageSize, PDO::PARAM_INT);
 		$statement->bindValue(2, ($page - 1) * $pageSize, PDO::PARAM_INT);
 		$statement->execute();
@@ -67,8 +73,8 @@ final class SemanticGrouping_GroupRepository {
 		}
 		$entryDao = FreshRSS_Factory::createEntryDao();
 		foreach ($groupRows as $groupRow) {
-			$memberStatement = $pdo->prepare('SELECT entry_id, similarity FROM group_members WHERE group_id=? ORDER BY CASE WHEN entry_id=? THEN 0 ELSE 1 END, similarity DESC, entry_id');
-			$memberStatement->execute([$groupRow['group_id'], $groupRow['representative_entry_id']]);
+			$memberStatement = $pdo->prepare('SELECT entry_id, similarity FROM group_members WHERE group_id=?');
+			$memberStatement->execute([$groupRow['group_id']]);
 			$memberRows = $memberStatement->fetchAll();
 			$ids = array_map(static fn(array $row): string => (string)$row['entry_id'], $memberRows);
 			$entries = [];
@@ -97,12 +103,27 @@ final class SemanticGrouping_GroupRepository {
 					'excerpt' => mb_substr(SemanticGrouping_TextNormalizer::text($entry->content(false)), 0, 300, 'UTF-8'),
 					'similarity' => $memberRow['similarity'] === null ? null : (float)$memberRow['similarity'],
 					'representative' => $id === (string)$groupRow['representative_entry_id'],
+					'date_timestamp' => (int)$entry->date(raw: true),
 				];
 			}
+			usort($members, static fn(array $left, array $right): int =>
+				$right['date_timestamp'] <=> $left['date_timestamp'] ?: strcmp((string)$right['id'], (string)$left['id']));
+			$latestDate = (int)($members[0]['date_timestamp'] ?? 0);
+			foreach ($members as &$member) {
+				unset($member['date_timestamp']);
+			}
+			unset($member);
 			if (count($members) >= $minimum) {
-				$groups[] = ['id' => (string)$groupRow['group_id'], 'generated_at' => (int)$groupRow['generated_at'], 'members' => $members];
+				$groups[] = [
+					'id' => (string)$groupRow['group_id'],
+					'generated_at' => (int)$groupRow['generated_at'],
+					'latest_date' => $latestDate,
+					'members' => $members,
+				];
 			}
 		}
+		usort($groups, static fn(array $left, array $right): int =>
+			$right['latest_date'] <=> $left['latest_date'] ?: strcmp((string)$left['id'], (string)$right['id']));
 		return ['groups' => $groups, 'page' => $page, 'pages' => max(1, (int)ceil($total / $pageSize)), 'total' => $total];
 	}
 

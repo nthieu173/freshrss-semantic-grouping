@@ -12,6 +12,13 @@
 	overflow: hidden;
 }
 
+.semantic-date-separator {
+	border-bottom: 1px solid var(--frss-border-color, #ccc);
+	font-size: 1rem;
+	margin: 1.5rem 0 .5rem;
+	padding-bottom: .35rem;
+}
+
 .semantic-member {
 	padding: .75rem 1rem;
 	border-top: 1px solid var(--frss-border-color, #ddd);
@@ -62,4 +69,3 @@
 	justify-content: center;
 	gap: 1rem;
 }
-

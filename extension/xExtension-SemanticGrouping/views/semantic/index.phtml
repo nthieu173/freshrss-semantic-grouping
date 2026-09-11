@@ -27,17 +27,27 @@ $this->partial('aside_feed');
 	<?php if ($result['groups'] === []): ?>
 		<p>No semantic groups are currently available.</p>
 	<?php endif; ?>
+	<?php $previousDate = ''; ?>
 	<?php foreach ($result['groups'] as $group): ?>
+		<?php
+		$latestDate = (int)($group['latest_date'] ?? 0);
+		$dateKey = $latestDate > 0 ? date('Y-m-d', $latestDate) : '';
+		?>
+		<?php if ($dateKey !== '' && $dateKey !== $previousDate): ?>
+			<h2 class="semantic-date-separator"><time datetime="<?= $dateKey ?>"><?= $escaped(date('F j, Y', $latestDate)) ?></time></h2>
+			<?php $previousDate = $dateKey; ?>
+		<?php endif; ?>
+		<?php $showMemberRoles = count($group['members']) > 1; ?>
 		<section class="semantic-group">
 			<?php foreach ($group['members'] as $member): ?>
-				<article class="semantic-member<?= $member['representative'] ? ' semantic-representative' : '' ?>">
+				<article class="semantic-member<?= $showMemberRoles && $member['representative'] ? ' semantic-representative' : '' ?>">
 					<h2>
 						<?php if ($member['url'] !== ''): ?><a href="<?= $escaped($member['url']) ?>" target="_blank" rel="noopener noreferrer"><?php endif; ?>
 						<?= $escaped($member['title']) ?>
 						<?php if ($member['url'] !== ''): ?></a><?php endif; ?>
 					</h2>
 					<p class="semantic-meta">
-						<?= $member['representative'] ? 'Representative' : 'Member' ?> · <?= $escaped($member['date']) ?>
+						<?php if ($showMemberRoles): ?><?= $member['representative'] ? 'Representative' : 'Member' ?> · <?php endif; ?><?= $escaped($member['date']) ?>
 						<?php if (!$member['representative'] && $member['similarity'] !== null): ?> · similarity <?= number_format((float)$member['similarity'], 3) ?><?php endif; ?>
 						<?= $member['is_read'] ? ' · read' : ' · unread' ?><?= $member['is_favorite'] ? ' · favourite' : '' ?>
 					</p>
@@ -55,4 +65,3 @@ $this->partial('aside_feed');
 		</nav>
 	<?php endif; ?>
 </main>
-
