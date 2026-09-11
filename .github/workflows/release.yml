@@ -65,7 +65,8 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: |
           version="${TAG#v}"
-          tar --sort=name --mtime='UTC 1970-01-01' --owner=0 --group=0 --numeric-owner \
+          source_date_epoch="$(git show -s --format=%ct "$GITHUB_SHA")"
+          tar --sort=name --mtime="@${source_date_epoch}" --owner=0 --group=0 --numeric-owner \
             -C extension -czf "xExtension-SemanticGrouping-$version.tar.gz" xExtension-SemanticGrouping
           sha256sum "xExtension-SemanticGrouping-$version.tar.gz" > "xExtension-SemanticGrouping-$version.tar.gz.sha256"
       - name: Publish release artifacts
