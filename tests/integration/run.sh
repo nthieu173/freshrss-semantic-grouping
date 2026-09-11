@@ -2,7 +2,7 @@
 set -eu
 
 runtime=${CONTAINER_RUNTIME:-docker}
-fresh_image=${FRESHRSS_IMAGE:-docker.io/freshrss/freshrss:1.29.1-alpine}
+fresh_image=${FRESHRSS_IMAGE:-docker.io/freshrss/freshrss:1.30.0-alpine}
 worker_image=${WORKER_IMAGE:-freshrss-semantic-grouping:integration}
 container_name="freshrss-semantic-integration-$$"
 integration_dir=$(mktemp -d "${TMPDIR:-/tmp}/freshrss-semantic-integration.XXXXXX")

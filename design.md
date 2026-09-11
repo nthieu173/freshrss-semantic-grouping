@@ -3,8 +3,8 @@
 ## Status and scope
 
 This document describes the architecture implemented by the paired FreshRSS
-extension and Python worker in this repository. The version 0.11.0 design targets
-FreshRSS 1.29.1, Python 3.14, `linux/arm64`, extension configuration schema 3,
+extension and Python worker in this repository. The version 0.11.1 design targets
+FreshRSS 1.30.0, Python 3.14, `linux/arm64`, extension configuration schema 3,
 and semantic database schema 2.
 
 The extension owns user interaction, FreshRSS integration, candidate selection,
@@ -146,7 +146,7 @@ and groups stay usable until a complete replacement can be published.
 FreshRSS user maintenance first reconciles any complete worker publication into
 native labels, then performs bounded candidate reconciliation. This ordering
 prevents a due export from outrunning a result published since the preceding
-maintenance pass. FreshRSS 1.29.1 runs this hook before the current feed
+maintenance pass. FreshRSS 1.30.0 runs this hook before the current feed
 actualization, so newly fetched entries normally enter the following maintenance
 export. This one-cycle lag is an accepted initial-release tradeoff.
 
@@ -238,6 +238,6 @@ and published mappings.
 - [FreshRSS extension documentation](https://freshrss.github.io/FreshRSS/en/developers/03_Backend/05_Extensions.html)
 - [FreshRSS article filtering](https://freshrss.github.io/FreshRSS/en/users/10_filter.html)
 - [FreshRSS saved user queries](https://freshrss.github.io/FreshRSS/en/users/user_queries.html)
-- [FreshRSS 1.29.1 maintenance-hook timing](https://github.com/FreshRSS/FreshRSS/blob/1.29.1/app/Controllers/feedController.php#L891-L938)
+- [FreshRSS 1.30.0 maintenance-hook timing](https://github.com/FreshRSS/FreshRSS/blob/1.30.0/app/Controllers/feedController.php#L891-L938)
 - [SemHash](https://github.com/MinishLab/semhash)
 - [Model2Vec](https://github.com/MinishLab/model2vec)

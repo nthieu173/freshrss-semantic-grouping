@@ -23,9 +23,9 @@ jobs:
         run: find extension -type f \( -name '*.php' -o -name '*.phtml' \) -print0 | xargs -0 -n1 php -l
       - name: Extension contract tests
         run: php extension/tests/run.php
-      - name: FreshRSS 1.29.1 API compatibility
+      - name: FreshRSS 1.30.0 API compatibility
         run: |
-          git clone --depth 1 --branch 1.29.1 https://github.com/FreshRSS/FreshRSS.git /tmp/FreshRSS
+          git clone --depth 1 --branch 1.30.0 https://github.com/FreshRSS/FreshRSS.git /tmp/FreshRSS
           cp -a extension/xExtension-SemanticGrouping /tmp/FreshRSS/extensions/
           php -l /tmp/FreshRSS/extensions/xExtension-SemanticGrouping/extension.php
 
@@ -49,7 +49,7 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
-      - name: FreshRSS 1.29.1 and worker integration
+      - name: FreshRSS 1.30.0 and worker integration
         run: ./tests/integration/run.sh
 
   arm64-image:

@@ -103,7 +103,7 @@ final class SemanticGrouping_CandidateSource {
 	/** @return Traversable<FreshRSS_Entry> */
 	public function entries(int $limit = 0): Traversable {
 		$dao = FreshRSS_Factory::createEntryDao();
-		// EntryDAO 1.29.1 uses Context::$search for visibility decisions even
+		// EntryDAO 1.30.0 uses Context::$search for visibility decisions even
 		// when the same filter is passed to listWhere(). Mirror the normal reader
 		// for the lifetime of the lazy iterator, then restore request state.
 		$previousSearch = FreshRSS_Context::$search;

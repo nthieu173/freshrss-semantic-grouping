@@ -19,7 +19,7 @@ also checked to ensure sqlite-vec is not required.
 
 ## Clean-room integration
 
-`make integration` creates a clean pinned FreshRSS 1.29.1 environment, installs
+`make integration` creates a clean pinned FreshRSS 1.30.0 environment, installs
 and enables the extension, initializes real FreshRSS SQLite data, and creates
 feeds, entries, a label, and saved queries. It exercises native feed, category,
 title, content, tag, label, unread/favourite, date, nested `OR`, and negation

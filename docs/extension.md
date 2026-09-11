@@ -3,7 +3,7 @@
 ## Responsibilities and hooks
 
 `xExtension-SemanticGrouping` is a user extension requiring FreshRSS 1.28 or
-newer and tested against 1.29.1. Its entry point registers:
+newer and tested against 1.30.0. Its entry point registers:
 
 - `EntryBeforeAdd` for exact-title rejection;
 - `FreshrssUserMaintenance` for candidate and native-label reconciliation;
@@ -46,7 +46,7 @@ variants of quotation marks compare equally.
 The selector stores a saved query's numeric identity and current name. Resolution
 constructs a `FreshRSS_UserQuery`, rejects deprecated or unfiltered definitions,
 maps its native source type and ID, preserves its state flags, and clones its
-`FreshRSS_BooleanSearch`. Both FreshRSS 1.29.1 encodings of unfiltered “all” state
+`FreshRSS_BooleanSearch`. Both FreshRSS 1.30.0 encodings of unfiltered “all” state
 are recognized when deciding whether a saved query is empty.
 
 A rolling UTC date constraint is added as a separate Boolean-search child. The
