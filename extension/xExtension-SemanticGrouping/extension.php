@@ -44,6 +44,7 @@ final class SemanticGroupingExtension extends Minz_Extension {
 		$this->registerController('semantic');
 		$this->registerViews();
 		FreshRSS_View::appendStyle($this->getFileUrl('semantic.css'));
+		FreshRSS_View::appendScript($this->getFileUrl('semantic.js'));
 		$this->registerHook(Minz_HookType::EntryBeforeAdd, [$this, 'entryBeforeAdd']);
 		$this->registerHook(Minz_HookType::FreshrssUserMaintenance, [$this, 'userMaintenance']);
 		$this->registerHook(Minz_HookType::MenuOtherEntry, [$this, 'menuEntry']);

@@ -134,6 +134,12 @@ $database->writeCandidateBatch($pdo, $generation, [[
 ], [
 	'entry_id' => '300000000', 'feed_id' => '1', 'received_at' => 200,
 	'embedding_text' => 'middle', 'source_hash' => 'source-c', 'exported_at' => 200,
+], [
+	'entry_id' => '400000000', 'feed_id' => '1', 'received_at' => 400,
+	'embedding_text' => 'similar', 'source_hash' => 'source-d', 'exported_at' => 400,
+], [
+	'entry_id' => '500000000', 'feed_id' => '1', 'received_at' => 500,
+	'embedding_text' => 'unknown', 'source_hash' => 'source-e', 'exported_at' => 500,
 ]]);
 check($pdo->query('SELECT COUNT(*) FROM pipeline_config')->fetchColumn() == 0, 'incomplete generation became active');
 $config = SemanticGrouping_Config::effectiveWorkerConfig(SemanticGrouping_Config::merge([
@@ -172,7 +178,7 @@ check(SemanticGrouping_Config::validate($disabledWithoutSource) === [], 'missing
 $enabledWithoutSource = $disabledWithoutSource;
 $enabledWithoutSource['enabled'] = true;
 check(SemanticGrouping_Config::validate($enabledWithoutSource) !== [], 'enabled pipeline accepted a missing query');
-$database->activateGeneration($pdo, $generation, 3, 'revision', $config, 10000, 100);
+$database->activateGeneration($pdo, $generation, 5, 'revision', $config, 10000, 100);
 check((int)$pdo->query('SELECT active_generation FROM pipeline_config')->fetchColumn() === $generation, 'generation activation failed');
 
 $pdo->exec("INSERT INTO groups(group_id, representative_entry_id, selection_generation, grouping_fingerprint, generated_at) VALUES
@@ -180,18 +186,23 @@ $pdo->exec("INSERT INTO groups(group_id, representative_entry_id, selection_gene
 	('group-middle', '300000000', {$generation}, 'fingerprint', 100)");
 $pdo->exec("INSERT INTO group_members(group_id, entry_id, similarity) VALUES
 	('group-newest', '100000000', 1.0),
-	('group-newest', '200000000', 0.9),
+	('group-newest', '200000000', 0.7),
+	('group-newest', '400000000', 0.9),
+	('group-newest', '500000000', NULL),
 	('group-middle', '300000000', 1.0)");
 FreshRSS_Factory::$dao = new TestEntryDao([
 	new FreshRSS_Entry('Old representative', '100000000', 100),
 	new FreshRSS_Entry('Newest member', '200000000', 300),
 	new FreshRSS_Entry('Middle singleton', '300000000', 200),
+	new FreshRSS_Entry('Most similar member', '400000000', 400),
+	new FreshRSS_Entry('Member without similarity', '500000000', 500),
 ]);
 $firstGroupPage = (new SemanticGrouping_GroupRepository($database))->groups(1, 1);
-check($firstGroupPage['groups'][0]['id'] === 'group-newest', 'groups were not sorted by descending date');
-check(array_column($firstGroupPage['groups'][0]['members'], 'id') === ['200000000', '100000000'], 'group members were not sorted by descending date');
+check($firstGroupPage['groups'][0]['id'] === 'group-middle', 'groups were not sorted by descending representative date');
 $secondGroupPage = (new SemanticGrouping_GroupRepository($database))->groups(2, 1);
-check($secondGroupPage['groups'][0]['id'] === 'group-middle', 'descending group date order did not span pages');
+check($secondGroupPage['groups'][0]['id'] === 'group-newest', 'representative date order did not span pages');
+check($secondGroupPage['groups'][0]['representative_date'] === 100, 'group date did not come from the representative article');
+check(array_column($secondGroupPage['groups'][0]['members'], 'id') === ['100000000', '400000000', '200000000', '500000000'], 'group members were not ordered by representative then descending similarity');
 
 $migratedSchema = $pdo->query("SELECT type, name, sql FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' ORDER BY type, name")->fetchAll(PDO::FETCH_ASSOC);
 $fixturePath = $directory . '/fixture.sqlite';
@@ -229,7 +240,7 @@ $view->semanticGroups = [
 	'groups' => [[
 		'id' => 'group',
 		'generated_at' => 100,
-		'latest_date' => 1_800_001_800,
+		'representative_date' => 1_800_001_800,
 		'members' => [[
 			'id' => '1',
 			'title' => '</a><script>alert(1)</script>',
@@ -244,8 +255,18 @@ $view->semanticGroups = [
 	], [
 		'id' => 'same-day-group',
 		'generated_at' => 100,
-		'latest_date' => 1_800_001_740,
+		'representative_date' => 1_800_001_740,
 		'members' => [[
+			'id' => '4',
+			'title' => 'Similar article',
+			'url' => '',
+			'date' => 'same day',
+			'is_read' => true,
+			'is_favorite' => false,
+			'excerpt' => '',
+			'similarity' => 0.875,
+			'representative' => false,
+		], [
 			'id' => '2',
 			'title' => 'Another article',
 			'url' => '',
@@ -259,7 +280,7 @@ $view->semanticGroups = [
 	], [
 		'id' => 'earlier-group',
 		'generated_at' => 100,
-		'latest_date' => 1_799_827_200,
+		'representative_date' => 1_799_827_200,
 		'members' => [[
 			'id' => '3',
 			'title' => 'Earlier article',
@@ -276,8 +297,17 @@ $view->semanticGroups = [
 $rendered = $view->render();
 check(!str_contains($rendered, '<script>') && !str_contains($rendered, '<img src=x'), 'group view emitted feed-provided markup');
 check(str_contains($rendered, '&lt;script&gt;') && str_contains($rendered, '&lt;unsafe-date&gt;'), 'group view did not escape feed-provided fields');
-check(!str_contains($rendered, 'Representative') && !str_contains($rendered, 'Member ·'), 'single-member group displayed a redundant role');
-check(!str_contains($rendered, 'semantic-representative'), 'single-member group retained redundant representative styling');
+check((bool)preg_match('~<article class="semantic-member">.*?&lt;unsafe-date&gt;~s', $rendered), 'single-member group displayed redundant role styling');
+check(substr_count($rendered, ' semantic-representative') === 1, 'multi-member group did not distinguish its representative');
+check(substr_count($rendered, ' semantic-group-member') === 1, 'multi-member group did not distinguish its member');
+check(str_contains($rendered, 'data-semantic-group-toggle') && str_contains($rendered, 'aria-expanded="true"'), 'multi-member group did not render its collapse control');
+check(str_contains($rendered, 'class="semantic-group-members"'), 'multi-member articles were not wrapped as collapsible content');
+$representativePosition = strpos($rendered, 'Another article');
+$memberContainerPosition = strpos($rendered, 'class="semantic-group-members"');
+$memberPosition = strpos($rendered, 'Similar article');
+check(is_int($representativePosition) && is_int($memberContainerPosition) && is_int($memberPosition)
+	&& $representativePosition < $memberContainerPosition && $memberContainerPosition < $memberPosition,
+	'group view did not place the representative above its collapsible members');
 check(str_contains($rendered, '<h2 class="semantic-date-separator"><time datetime="2027-01-15">January 15, 2027</time></h2>'), 'group view did not render a date separator');
 check(substr_count($rendered, 'class="semantic-date-separator"') === 2, 'group view did not consolidate same-day date separators');
 

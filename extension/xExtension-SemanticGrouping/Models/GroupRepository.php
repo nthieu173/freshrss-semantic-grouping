@@ -54,11 +54,9 @@ final class SemanticGrouping_GroupRepository {
 		$pdo = $this->database->open(false, true);
 		$total = (int)$pdo->query('SELECT COUNT(*) FROM groups')->fetchColumn();
 		$statement = $pdo->prepare('SELECT g.* FROM groups g
-			JOIN group_members gm ON gm.group_id=g.group_id
-			LEFT JOIN candidate_members cm ON cm.generation=g.selection_generation AND cm.entry_id=gm.entry_id
+			LEFT JOIN candidate_members cm ON cm.generation=g.selection_generation AND cm.entry_id=g.representative_entry_id
 			LEFT JOIN article_inputs ai ON ai.entry_id=cm.entry_id AND ai.source_hash=cm.source_hash
-			GROUP BY g.group_id
-			ORDER BY MAX(ai.received_at) DESC, g.group_id
+			ORDER BY ai.received_at DESC, g.group_id
 			LIMIT ? OFFSET ?');
 		$statement->bindValue(1, $pageSize, PDO::PARAM_INT);
 		$statement->bindValue(2, ($page - 1) * $pageSize, PDO::PARAM_INT);
@@ -82,6 +80,7 @@ final class SemanticGrouping_GroupRepository {
 				$entries[$entry->id()] = $entry;
 			}
 			$members = [];
+			$representativeDate = 0;
 			foreach ($memberRows as $memberRow) {
 				$id = (string)$memberRow['entry_id'];
 				if (!isset($entries[$id])) {
@@ -93,6 +92,11 @@ final class SemanticGrouping_GroupRepository {
 				if (!in_array($scheme, ['http', 'https'], true)) {
 					$link = '';
 				}
+				$isRepresentative = $id === (string)$groupRow['representative_entry_id'];
+				$dateTimestamp = (int)$entry->date(raw: true);
+				if ($isRepresentative) {
+					$representativeDate = $dateTimestamp;
+				}
 				$members[] = [
 					'id' => $id,
 					'title' => $entry->title(),
@@ -102,28 +106,32 @@ final class SemanticGrouping_GroupRepository {
 					'is_favorite' => $entry->isFavorite(),
 					'excerpt' => mb_substr(SemanticGrouping_TextNormalizer::text($entry->content(false)), 0, 300, 'UTF-8'),
 					'similarity' => $memberRow['similarity'] === null ? null : (float)$memberRow['similarity'],
-					'representative' => $id === (string)$groupRow['representative_entry_id'],
-					'date_timestamp' => (int)$entry->date(raw: true),
+					'representative' => $isRepresentative,
 				];
 			}
-			usort($members, static fn(array $left, array $right): int =>
-				$right['date_timestamp'] <=> $left['date_timestamp'] ?: strcmp((string)$right['id'], (string)$left['id']));
-			$latestDate = (int)($members[0]['date_timestamp'] ?? 0);
-			foreach ($members as &$member) {
-				unset($member['date_timestamp']);
-			}
-			unset($member);
+			usort($members, static function (array $left, array $right): int {
+				$representativeOrder = (int)$right['representative'] <=> (int)$left['representative'];
+				if ($representativeOrder !== 0) {
+					return $representativeOrder;
+				}
+				if ($left['similarity'] === null || $right['similarity'] === null) {
+					$similarityOrder = ($left['similarity'] === null ? 1 : 0) <=> ($right['similarity'] === null ? 1 : 0);
+				} else {
+					$similarityOrder = $right['similarity'] <=> $left['similarity'];
+				}
+				return $similarityOrder ?: strcmp((string)$left['id'], (string)$right['id']);
+			});
 			if (count($members) >= $minimum) {
 				$groups[] = [
 					'id' => (string)$groupRow['group_id'],
 					'generated_at' => (int)$groupRow['generated_at'],
-					'latest_date' => $latestDate,
+					'representative_date' => $representativeDate,
 					'members' => $members,
 				];
 			}
 		}
 		usort($groups, static fn(array $left, array $right): int =>
-			$right['latest_date'] <=> $left['latest_date'] ?: strcmp((string)$left['id'], (string)$right['id']));
+			$right['representative_date'] <=> $left['representative_date'] ?: strcmp((string)$left['id'], (string)$right['id']));
 		return ['groups' => $groups, 'page' => $page, 'pages' => max(1, (int)ceil($total / $pageSize)), 'total' => $total];
 	}
 

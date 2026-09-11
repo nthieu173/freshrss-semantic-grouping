@@ -30,22 +30,39 @@ $this->partial('aside_feed');
 	<?php $previousDate = ''; ?>
 	<?php foreach ($result['groups'] as $group): ?>
 		<?php
-		$latestDate = (int)($group['latest_date'] ?? 0);
-		$dateKey = $latestDate > 0 ? date('Y-m-d', $latestDate) : '';
+		$representativeDate = (int)($group['representative_date'] ?? 0);
+		$dateKey = $representativeDate > 0 ? date('Y-m-d', $representativeDate) : '';
+		$representative = null;
+		$otherMembers = [];
+		foreach ($group['members'] as $member) {
+			if ($member['representative'] && $representative === null) {
+				$representative = $member;
+			} else {
+				$otherMembers[] = $member;
+			}
+		}
+		$members = $representative === null ? $otherMembers : [$representative, ...$otherMembers];
+		$showMemberRoles = $representative !== null && $otherMembers !== [];
+		$memberContainerId = 'semantic-group-members-' . substr(hash('sha256', (string)$group['id']), 0, 16);
 		?>
 		<?php if ($dateKey !== '' && $dateKey !== $previousDate): ?>
-			<h2 class="semantic-date-separator"><time datetime="<?= $dateKey ?>"><?= $escaped(date('F j, Y', $latestDate)) ?></time></h2>
+			<h2 class="semantic-date-separator"><time datetime="<?= $dateKey ?>"><?= $escaped(date('F j, Y', $representativeDate)) ?></time></h2>
 			<?php $previousDate = $dateKey; ?>
 		<?php endif; ?>
-		<?php $showMemberRoles = count($group['members']) > 1; ?>
 		<section class="semantic-group">
-			<?php foreach ($group['members'] as $member): ?>
-				<article class="semantic-member<?= $showMemberRoles && $member['representative'] ? ' semantic-representative' : '' ?>">
-					<h2>
-						<?php if ($member['url'] !== ''): ?><a href="<?= $escaped($member['url']) ?>" target="_blank" rel="noopener noreferrer"><?php endif; ?>
-						<?= $escaped($member['title']) ?>
-						<?php if ($member['url'] !== ''): ?></a><?php endif; ?>
-					</h2>
+			<?php foreach ($members as $memberIndex => $member): ?>
+				<?php if ($showMemberRoles && $memberIndex === 1): ?><div class="semantic-group-members" id="<?= $memberContainerId ?>"><?php endif; ?>
+				<article class="semantic-member<?= $showMemberRoles && $member['representative'] ? ' semantic-representative' : '' ?><?= $showMemberRoles && !$member['representative'] ? ' semantic-group-member' : '' ?>">
+					<header class="semantic-member-header">
+						<h2>
+							<?php if ($member['url'] !== ''): ?><a href="<?= $escaped($member['url']) ?>" target="_blank" rel="noopener noreferrer"><?php endif; ?>
+							<?= $escaped($member['title']) ?>
+							<?php if ($member['url'] !== ''): ?></a><?php endif; ?>
+						</h2>
+						<?php if ($showMemberRoles && $member['representative']): ?>
+							<button class="btn semantic-group-toggle" type="button" aria-expanded="true" aria-controls="<?= $memberContainerId ?>" data-semantic-group-toggle>Collapse group</button>
+						<?php endif; ?>
+					</header>
 					<p class="semantic-meta">
 						<?php if ($showMemberRoles): ?><?= $member['representative'] ? 'Representative' : 'Member' ?> · <?php endif; ?><?= $escaped($member['date']) ?>
 						<?php if (!$member['representative'] && $member['similarity'] !== null): ?> · similarity <?= number_format((float)$member['similarity'], 3) ?><?php endif; ?>
@@ -54,6 +71,7 @@ $this->partial('aside_feed');
 					<?php if ($member['excerpt'] !== ''): ?><p><?= $escaped($member['excerpt']) ?></p><?php endif; ?>
 				</article>
 			<?php endforeach; ?>
+			<?php if ($showMemberRoles): ?></div><?php endif; ?>
 		</section>
 	<?php endforeach; ?>
 

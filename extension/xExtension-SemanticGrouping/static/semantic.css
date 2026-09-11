@@ -24,17 +24,33 @@
 	border-top: 1px solid var(--frss-border-color, #ddd);
 }
 
-.semantic-member:first-child {
+.semantic-group > .semantic-member:first-child {
 	border-top: 0;
 }
 
-.semantic-representative {
+.semantic-group-member {
 	background: color-mix(in srgb, currentColor 5%, transparent);
+}
+
+.semantic-group-members[hidden] {
+	display: none;
+}
+
+.semantic-member-header {
+	display: flex;
+	align-items: start;
+	justify-content: space-between;
+	gap: 1rem;
 }
 
 .semantic-member h2 {
 	font-size: 1.1rem;
 	margin: 0 0 .25rem;
+}
+
+.semantic-group-toggle {
+	flex: none;
+	white-space: nowrap;
 }
 
 .semantic-meta {
