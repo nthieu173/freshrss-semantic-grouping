@@ -4,29 +4,18 @@ declare(strict_types=1);
 final class SemanticGrouping_ExactTitleFilter {
 	/** @var array<string,true>|null */
 	private ?array $titles = null;
+	private ?FreshRSS_EntryDAO $dao = null;
 
 	public function filter(FreshRSS_Entry $entry): ?FreshRSS_Entry {
 		if ($this->titles === null) {
 			$this->titles = [];
-			$dao = FreshRSS_Factory::createEntryDao();
-			$emptySearch = new FreshRSS_BooleanSearch('');
-			// EntryDAO 1.29.1 also consults the request-global search while
-			// deciding whether hidden feeds are visible. An ingestion filter must
-			// compare against every retained entry, regardless of the reader view
-			// that happened to initialize this process.
-			$previousSearch = FreshRSS_Context::$search;
-			FreshRSS_Context::$search = $emptySearch;
-			try {
-				foreach ($dao->listWhere('Z', 0, FreshRSS_Entry::STATE_ALL, $emptySearch, limit: 0) as $existing) {
-					$title = SemanticGrouping_TextNormalizer::title($existing->title());
-					if ($title !== '') {
-						$this->titles[$title] = true;
-					}
-				}
-			} finally {
-				FreshRSS_Context::$search = $previousSearch;
-			}
+			$this->dao = FreshRSS_Factory::createEntryDao();
+			$this->addTitles($this->dao->fetchColumn('SELECT title FROM `_entry`', 0));
 		}
+		// FreshRSS stages accepted entries in _entrytmp until the surrounding
+		// feed actualization commits. Refresh this set for every hook invocation
+		// so entries staged by another request are visible in this process.
+		$this->addTitles($this->dao->fetchColumn('SELECT title FROM `_entrytmp`', 0));
 		$title = SemanticGrouping_TextNormalizer::title($entry->title());
 		if ($title === '') {
 			return $entry;
@@ -36,5 +25,18 @@ final class SemanticGrouping_ExactTitleFilter {
 		}
 		$this->titles[$title] = true;
 		return $entry;
+	}
+
+	/** @param list<int|string|null>|null $titles */
+	private function addTitles(?array $titles): void {
+		foreach ($titles ?? [] as $value) {
+			if (!is_string($value)) {
+				continue;
+			}
+			$title = SemanticGrouping_TextNormalizer::title($value);
+			if ($title !== '') {
+				$this->titles[$title] = true;
+			}
+		}
 	}
 }

@@ -27,8 +27,8 @@ selection plus the independent rolling cutoff.
 The integration scenario verifies:
 
 - missing, empty, renamed, and ambiguous saved queries fail closed;
-- exact-title rejection covers stored and same-batch duplicates and remains
-  independently configurable;
+- exact-title rejection covers retained, staged, and same-process duplicates
+  and remains independently configurable;
 - an export activates only a complete native-query result;
 - the worker sees only `/semantic-data`, embeds with the real bundled Model2Vec
   model, and groups through SemHash/USearch;

@@ -22,7 +22,9 @@ worker never reads FreshRSS configuration files.
 Exact-title filtering is synchronous and independent of the semantic pipeline
 switch. On the first hook invocation in a refresh process, the filter loads all
 currently retained titles through FreshRSS's DAO and builds a normalized hash
-set. For each incoming entry it:
+set. Before each admission decision it also loads titles from FreshRSS's
+temporary-entry table, where accepted entries wait for the surrounding feed
+actualization to commit. For each incoming entry it:
 
 1. HTML-decodes and Unicode-normalizes the title;
 2. uses PHP Intl's ICU transliterator to canonicalize Unicode quotation marks;
@@ -32,11 +34,11 @@ set. For each incoming entry it:
 6. rejects a title already in the set;
 7. adds each accepted title to the set before returning the entry.
 
-The in-process update rejects duplicates in the same refresh batch as well as
-duplicates of stored entries. Punctuation and source names remain significant
-to avoid over-aggressive ingestion deletion, while visual variants of quotation
-marks compare equally. The filter temporarily mirrors and restores FreshRSS
-request search state where required by the 1.29.1 DAO.
+The in-process update rejects duplicates in the same refresh batch. Refreshing
+the temporary titles also covers entries staged by another refresh request that
+have not reached the retained-entry table yet. Punctuation and source names
+remain significant to avoid over-aggressive ingestion deletion, while visual
+variants of quotation marks compare equally.
 
 ## Candidate-source resolution
 

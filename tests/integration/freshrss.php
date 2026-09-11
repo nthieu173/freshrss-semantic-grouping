@@ -379,6 +379,23 @@ function setup(): void {
 
 	$duplicate = new FreshRSS_Entry($feedId, 'incoming-duplicate', '  SEMANTIC city council approves climate plan  ');
 	same(Minz_ExtensionManager::callHook(Minz_HookType::EntryBeforeAdd, $duplicate), null, 'Existing normalized-title duplicate was accepted');
+	$stagedTitle = 'Analysis of a shared regional report';
+	$stagingDao = FreshRSS_Factory::createEntryDao();
+	check(
+		$stagingDao->addEntry(
+			entryValues((string)($base + 106), $feedId, 'staged-title', $stagedTitle, '<p>Staged elsewhere</p>', $now - 9 * 24 * 3600),
+			useTmpTable: true,
+		),
+		'Could not insert staged-title fixture',
+	);
+	same(
+		Minz_ExtensionManager::callHook(
+			Minz_HookType::EntryBeforeAdd,
+			new FreshRSS_Entry($otherFeedId, 'incoming-staged-duplicate', ' analysis of a SHARED regional report '),
+		),
+		null,
+		'Duplicate of an entry staged after filter initialization was accepted',
+	);
 	$unique = new FreshRSS_Entry($feedId, 'incoming-unique', 'Semantic unique same-batch headline');
 	same(Minz_ExtensionManager::callHook(Minz_HookType::EntryBeforeAdd, $unique), $unique, 'Unique incoming title was rejected');
 	same(

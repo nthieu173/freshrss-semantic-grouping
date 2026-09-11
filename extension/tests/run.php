@@ -25,11 +25,26 @@ final class FreshRSS_Entry {
 	public function content(bool $raw = false): string { return ''; }
 }
 
-final class TestEntryDao {
+class FreshRSS_EntryDAO {}
+
+final class TestEntryDao extends FreshRSS_EntryDAO {
+	/** @var list<string> */
+	public array $pendingTitles;
 	/** @param list<FreshRSS_Entry> $entries */
-	public function __construct(private readonly array $entries) {}
+	public function __construct(private readonly array $entries, array $pendingTitles = []) {
+		$this->pendingTitles = $pendingTitles;
+	}
 	/** @return Traversable<FreshRSS_Entry> */
 	public function listWhere(...$unused): Traversable { yield from $this->entries; }
+	/** @return list<string> */
+	public function fetchColumn(string $sql, int $column): array {
+		check($column === 0, 'exact-title query selected an unexpected column');
+		if (str_contains($sql, '_entrytmp')) {
+			return $this->pendingTitles;
+		}
+		check(str_contains($sql, '_entry'), 'exact-title query used an unexpected table');
+		return array_map(static fn(FreshRSS_Entry $entry): string => $entry->title(), $this->entries);
+	}
 	/** @param list<string> $ids @return Traversable<FreshRSS_Entry> */
 	public function listByIds(array $ids, string $order = 'ASC'): Traversable {
 		foreach ($this->entries as $entry) {
@@ -119,6 +134,16 @@ $accepted = new FreshRSS_Entry('New title');
 check($filter->filter($accepted) === $accepted, 'new title was rejected');
 check($filter->filter(new FreshRSS_Entry('NEW TITLE')) === null, 'same-batch duplicate was accepted');
 check($filter->filter(new FreshRSS_Entry('   ')) instanceof FreshRSS_Entry, 'blank title was rejected');
+
+$stagingDao = new TestEntryDao([]);
+FreshRSS_Factory::$dao = $stagingDao;
+$filter = new SemanticGrouping_ExactTitleFilter();
+check($filter->filter(new FreshRSS_Entry('First local title')) instanceof FreshRSS_Entry, 'initial title was rejected');
+$stagingDao->pendingTitles[] = 'Externally staged title';
+check(
+	$filter->filter(new FreshRSS_Entry(' externally STAGED title ')) === null,
+	'entry staged after filter initialization was accepted',
+);
 
 if (class_exists('Transliterator')) {
 	FreshRSS_Factory::$dao = new TestEntryDao([new FreshRSS_Entry("Organizer behind \u{2018}moth\u{2019} demonstrations")]);
