@@ -13,7 +13,7 @@ fingerprint into `pipeline_config`; the worker does not read FreshRSS files.
 | Rolling window | 72 hours | An outer received-date constraint independent of the saved query. |
 | Export interval | 30 minutes | Minimum reconciliation interval; config/query changes bypass it. |
 | Worker interval | 60 minutes | Logical interval checked by `run`; the host timer can remain fixed. |
-| Minimum group size | 2 | Smaller groups are not published or displayed. |
+| Minimum group size | 1 | Smaller groups are not published or displayed. A value of 1 allows single-source stories. |
 | Title/content input | title only | Selected fields become canonical embedding text. |
 | Content limit | 2000 characters | Applied after HTML decoding, markup removal, Unicode normalization, and whitespace normalization. |
 | Embedding batch | 128 | May be raised to 256 after measuring memory. |

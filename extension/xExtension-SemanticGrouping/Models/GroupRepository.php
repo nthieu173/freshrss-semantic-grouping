@@ -59,11 +59,11 @@ final class SemanticGrouping_GroupRepository {
 		$statement->execute();
 		$groupRows = $statement->fetchAll();
 		$groups = [];
-		$minimum = 2;
+		$minimum = 1;
 		$configJson = $pdo->query('SELECT config_json FROM pipeline_config WHERE singleton=1')->fetchColumn();
 		if (is_string($configJson)) {
 			$config = json_decode($configJson, true);
-			$minimum = is_array($config) ? max(2, (int)($config['minimum_group_size'] ?? 2)) : 2;
+			$minimum = is_array($config) ? max(1, (int)($config['minimum_group_size'] ?? 1)) : 1;
 		}
 		$entryDao = FreshRSS_Factory::createEntryDao();
 		foreach ($groupRows as $groupRow) {

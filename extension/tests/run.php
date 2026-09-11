@@ -115,17 +115,21 @@ $config = SemanticGrouping_Config::effectiveWorkerConfig(SemanticGrouping_Config
 	'candidate_source' => ['mode' => 'all_entries', 'query_id' => null, 'query_name' => 'All entries'],
 ]), 'query-v1');
 check(SemanticGrouping_Config::embeddingFingerprint($config) === '735c7ecc39088db6c69eff6eecb21a27d5d78d31652f6b745d4c715eaf8dcfdf', 'PHP/Python embedding fingerprint contract changed');
-check(SemanticGrouping_Config::groupingFingerprint($config) === 'e6d4cc696bdc21c3fc389f4a15ba7ccdc50d53d24c0ae8eb7bd79eae718171bf', 'PHP/Python grouping fingerprint contract changed');
+check(SemanticGrouping_Config::groupingFingerprint($config) === '080b4282f97c752a94011a4c2acaf67c11253b03ab3d4b47810eb96678b0b606', 'PHP/Python grouping fingerprint contract changed');
 $invalidThreshold = $config;
 $invalidThreshold['similarity_threshold'] = NAN;
 check(SemanticGrouping_Config::validate($invalidThreshold) !== [], 'non-numeric similarity threshold was accepted');
 $defaults = SemanticGrouping_Config::defaults();
+check($defaults['minimum_group_size'] === 1, 'Minimum group size does not default to one');
 check($defaults['candidate_source'] === [
 	'mode' => 'all_entries',
 	'query_id' => null,
 	'query_name' => 'All entries',
 ], 'All entries is not the default candidate source');
 check(SemanticGrouping_Config::validate($defaults) === [], 'default configuration did not validate');
+$invalidMinimum = $defaults;
+$invalidMinimum['minimum_group_size'] = 0;
+check(SemanticGrouping_Config::validate($invalidMinimum) !== [], 'minimum group size accepted zero');
 $disabledWithoutSource = $defaults;
 $disabledWithoutSource['candidate_source'] = ['mode' => 'saved_query', 'query_id' => null, 'query_name' => ''];
 $disabledWithoutSource['enabled'] = false;

@@ -32,6 +32,21 @@ def test_result_conversion_uses_earliest_member_and_minimum_size() -> None:
     assert [member[0] for member in groups[0].members] == ["early", "late"]
 
 
+def test_minimum_size_one_publishes_singleton_groups() -> None:
+    inputs = [
+        GroupingInput("first", 10, np.array([1.0, 0.0], dtype=np.float32)),
+        GroupingInput("second", 20, np.array([0.0, 1.0], dtype=np.float32)),
+    ]
+
+    groups = groups_from_result(Result([]), inputs, 1)
+
+    assert [group.representative_entry_id for group in groups] == ["first", "second"]
+    assert [group.members for group in groups] == [
+        (("first", 1.0),),
+        (("second", 1.0),),
+    ]
+
+
 def test_group_phase_publishes_only_after_all_embeddings_exist(populate) -> None:
     store = populate(entries=3)
     snapshot = store.load_snapshot()
@@ -55,7 +70,7 @@ def test_group_phase_publishes_only_after_all_embeddings_exist(populate) -> None
                 ]
             )
 
-    assert group(store, lambda _vectors, _records: FakeSemHash()) == 1
+    assert group(store, lambda _vectors, _records: FakeSemHash()) == 2
     assert store.get_state("last_published_generation") == "1"
 
 
@@ -73,4 +88,3 @@ def test_real_semhash_usearch_precomputed_api() -> None:
     records = [{"entry_id": value} for value in ("first", "second", "third")]
     result = _semhash(vectors, records).self_deduplicate(threshold=0.9)
     assert len(result.filtered) == 1
-

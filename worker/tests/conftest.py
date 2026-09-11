@@ -20,7 +20,7 @@ def worker_config(**overrides: object) -> dict[str, object]:
         "window_hours": 72,
         "candidate_export_interval_minutes": 30,
         "worker_interval_minutes": 60,
-        "minimum_group_size": 2,
+        "minimum_group_size": 1,
         "include_title": True,
         "include_content": False,
         "content_character_limit": 2000,
@@ -74,4 +74,3 @@ def populate(database: Path) -> Callable[..., SemanticStore]:
         return SemanticStore(database)
 
     return create
-

@@ -20,7 +20,7 @@ final class SemanticGrouping_Config {
 			'window_hours' => 72,
 			'candidate_export_interval_minutes' => 30,
 			'worker_interval_minutes' => 60,
-			'minimum_group_size' => 2,
+			'minimum_group_size' => 1,
 			'include_title' => true,
 			'include_content' => false,
 			'content_character_limit' => 2000,
@@ -83,7 +83,7 @@ final class SemanticGrouping_Config {
 		self::validateInt($config, 'window_hours', 1, 8760, $errors);
 		self::validateInt($config, 'candidate_export_interval_minutes', 1, 1440, $errors);
 		self::validateInt($config, 'worker_interval_minutes', 1, 1440, $errors);
-		self::validateInt($config, 'minimum_group_size', 2, 1000, $errors);
+		self::validateInt($config, 'minimum_group_size', 1, 1000, $errors);
 		self::validateInt($config, 'content_character_limit', 0, 100000, $errors);
 		self::validateInt($config, 'embedding_batch_size', 1, 256, $errors);
 		if (empty($config['include_title']) && empty($config['include_content'])) {

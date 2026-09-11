@@ -88,7 +88,7 @@ class WorkerConfig:
             similarity_threshold=_float(data, "similarity_threshold", 0.0, 1.0),
             window_hours=_int(data, "window_hours", 1, 24 * 365),
             worker_interval_minutes=_int(data, "worker_interval_minutes", 1, 24 * 60),
-            minimum_group_size=_int(data, "minimum_group_size", 2, 1000),
+            minimum_group_size=_int(data, "minimum_group_size", 1, 1000),
             include_title=include_title,
             include_content=include_content,
             content_character_limit=_int(data, "content_character_limit", 0, 100_000),
