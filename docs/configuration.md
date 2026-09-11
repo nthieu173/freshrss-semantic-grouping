@@ -12,11 +12,14 @@ fingerprint into `pipeline_config`; the worker does not read FreshRSS files.
 | Similarity threshold | `0.90` | Changes groups without invalidating vectors. |
 | Rolling window | 72 hours | An outer received-date constraint independent of the saved query. |
 | Refresh interval | 30 minutes | Candidate reconciliation interval in 10-minute increments; config/query changes bypass it. |
-| Minimum group size | 1 | Smaller groups are not published or displayed. A value of 1 allows single-source stories. |
 | Title/content input | title only | Selected fields become canonical embedding text. |
 | Content limit | 2000 characters | Applied after HTML decoding, markup removal, Unicode normalization, and whitespace normalization. |
 | Embedding batch | 128 | May be raised to 256 after measuring memory. |
 | Exact-title filter | yes | Rejects a normalized exact title before insertion. |
+
+The semantic group minimum is fixed at two and is not configurable. Candidates
+outside every publishable multi-article component are reconciled into the fixed
+**Single articles** native label.
 
 The pipeline switch controls candidate export and worker processing. The
 exact-title filter remains independently controlled by its own setting while
@@ -39,9 +42,10 @@ forces a new export even inside the normal export interval.
 ## Invalidations and leases
 
 Model, input fields, content limit, normalization version, and the explicit
-rebuild token form the embedding fingerprint. Threshold, window, minimum size,
-and query fingerprint additionally form the grouping fingerprint. Old groups
-remain visible until their replacement is complete.
+rebuild token form the embedding fingerprint. Threshold, window, the fixed
+minimum size of two, and query fingerprint additionally form the grouping
+fingerprint. Old native labels remain in place until a replacement publication
+is complete and a FreshRSS maintenance pass reconciles it.
 
 Every complete export renews the producer lease to three export intervals with
 a 90-minute minimum. The worker performs no embedding or grouping after the

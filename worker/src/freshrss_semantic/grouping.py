@@ -12,7 +12,7 @@ from typing import Any
 import numpy as np
 from numpy.typing import NDArray
 
-from .config import PipelineSnapshot
+from .config import MINIMUM_GROUP_SIZE, PipelineSnapshot
 from .semantic_store import GroupingInput, PublishedGroup, SemanticStore
 
 LOGGER = logging.getLogger(__name__)
@@ -47,21 +47,12 @@ def _record_id(record: Any) -> str:
     return entry_id
 
 
-def _cosine(left: NDArray[np.float32], right: NDArray[np.float32]) -> float:
-    denominator = float(np.linalg.norm(left) * np.linalg.norm(right))
-    if denominator == 0:
-        return 0.0
-    return max(-1.0, min(1.0, float(np.dot(left, right) / denominator)))
-
-
 def groups_from_result(
     result: Any,
     inputs: Sequence[GroupingInput],
-    minimum_group_size: int,
 ) -> list[PublishedGroup]:
     """Turn SemHash duplicate edges into deterministic connected groups."""
     order = {item.entry_id: (item.received_at, item.entry_id) for item in inputs}
-    vectors = {item.entry_id: item.embedding for item in inputs}
     parent = {item.entry_id: item.entry_id for item in inputs}
 
     def find(item: str) -> str:
@@ -95,21 +86,12 @@ def groups_from_result(
 
     groups: list[PublishedGroup] = []
     for members in components.values():
-        if len(members) < minimum_group_size:
+        if len(members) < MINIMUM_GROUP_SIZE:
             continue
         members.sort(key=order.__getitem__)
         representative = members[0]
         group_id = hashlib.sha256(("group-v1\0" + representative).encode()).hexdigest()[:32]
-        scored = tuple(
-            (
-                entry_id,
-                1.0
-                if entry_id == representative
-                else _cosine(vectors[representative], vectors[entry_id]),
-            )
-            for entry_id in members
-        )
-        groups.append(PublishedGroup(group_id, representative, scored))
+        groups.append(PublishedGroup(group_id, representative, tuple(members)))
     groups.sort(key=lambda group: order[group.representative_entry_id])
     return groups
 
@@ -134,7 +116,7 @@ def group(
         result = semhash_factory(matrix, records).self_deduplicate(
             threshold=snapshot.config.similarity_threshold
         )
-        groups = groups_from_result(result, inputs, snapshot.config.minimum_group_size)
+        groups = groups_from_result(result, inputs)
         dimensions = int(matrix.shape[1])
     store.publish_groups(snapshot, groups)
     LOGGER.info(

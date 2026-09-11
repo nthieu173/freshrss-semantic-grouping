@@ -2,8 +2,9 @@
 declare(strict_types=1);
 
 final class SemanticGrouping_Config {
-	public const SCHEMA_VERSION = 2;
+	public const SCHEMA_VERSION = 3;
 	public const NORMALIZATION_VERSION = 1;
+	public const MINIMUM_GROUP_SIZE = 2;
 
 	/** @return array<string,mixed> */
 	public static function defaults(): array {
@@ -19,7 +20,6 @@ final class SemanticGrouping_Config {
 			'similarity_threshold' => 0.90,
 			'window_hours' => 72,
 			'candidate_export_interval_minutes' => 30,
-			'minimum_group_size' => 1,
 			'include_title' => true,
 			'include_content' => false,
 			'content_character_limit' => 2000,
@@ -33,7 +33,8 @@ final class SemanticGrouping_Config {
 	/** @param array<string,mixed> $stored @return array<string,mixed> */
 	public static function merge(array $stored): array {
 		$config = array_replace(self::defaults(), $stored);
-		unset($config['worker_interval_minutes']);
+		$config['schema_version'] = self::SCHEMA_VERSION;
+		unset($config['worker_interval_minutes'], $config['minimum_group_size']);
 		$refreshInterval = $config['candidate_export_interval_minutes'] ?? null;
 		if (is_int($refreshInterval) && $refreshInterval >= 1 && $refreshInterval <= 1440) {
 			$config['candidate_export_interval_minutes'] = min(1440, max(10, intdiv($refreshInterval + 9, 10) * 10));
@@ -58,7 +59,6 @@ final class SemanticGrouping_Config {
 			'similarity_threshold' => is_numeric($thresholdValue) ? (float)$thresholdValue : NAN,
 			'window_hours' => Minz_Request::paramInt('window_hours'),
 			'candidate_export_interval_minutes' => Minz_Request::paramInt('candidate_export_interval_minutes'),
-			'minimum_group_size' => Minz_Request::paramInt('minimum_group_size'),
 			'include_title' => Minz_Request::paramBoolean('include_title'),
 			'include_content' => Minz_Request::paramBoolean('include_content'),
 			'content_character_limit' => Minz_Request::paramInt('content_character_limit'),
@@ -90,7 +90,6 @@ final class SemanticGrouping_Config {
 		} elseif ($refreshInterval % 10 !== 0) {
 			$errors[] = 'Refresh interval must be a multiple of 10 minutes.';
 		}
-		self::validateInt($config, 'minimum_group_size', 1, 1000, $errors);
 		self::validateInt($config, 'content_character_limit', 0, 100000, $errors);
 		self::validateInt($config, 'embedding_batch_size', 1, 256, $errors);
 		if (empty($config['include_title']) && empty($config['include_content'])) {
@@ -164,7 +163,7 @@ final class SemanticGrouping_Config {
 	public static function groupingFingerprint(array $config): string {
 		return self::fingerprint([
 			'embedding_fingerprint' => self::embeddingFingerprint($config),
-			'minimum_group_size' => (int)$config['minimum_group_size'],
+			'minimum_group_size' => self::MINIMUM_GROUP_SIZE,
 			'query_fingerprint' => (string)$config['query_fingerprint'],
 			'similarity_threshold' => (float)$config['similarity_threshold'],
 			'window_hours' => (int)$config['window_hours'],

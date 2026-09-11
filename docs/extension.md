@@ -6,13 +6,14 @@
 newer and tested against 1.29.1. Its entry point registers:
 
 - `EntryBeforeAdd` for exact-title rejection;
-- `FreshrssUserMaintenance` for candidate reconciliation;
+- `FreshrssUserMaintenance` for candidate and native-label reconciliation;
 - install/upgrade schema creation and migration;
-- a disable/uninstall path that attempts to publish a disabled revision without
-  deleting shared data;
-- configuration and Semantic Groups controllers, views, navigation, and styles.
+- a pipeline-disable path that publishes a disabled revision and removes only
+  extension-owned labels;
+- uninstall cleanup based on native ownership attributes;
+- configuration and pipeline/label-sync status.
 
-The extension is the only user-facing configuration surface. It stores schema-2
+The extension is the only user-facing configuration surface. It stores schema-3
 settings through FreshRSS's per-user extension configuration API. A successful
 export publishes the effective worker configuration to `pipeline_config`; the
 worker never reads FreshRSS configuration files.
@@ -93,7 +94,9 @@ maintenance-hook boundary.
 Turning off the pipeline publishes a disabled revision under the same exporter
 lock. This path remains fail-safe even if an older stored configuration no longer
 passes current validation. If publication is impossible, producer-lease expiry
-eventually stops worker work.
+eventually stops worker work. Pipeline disablement and uninstall discover labels
+by their native ownership attributes and remove only those labels; entries and
+personal labels remain untouched.
 
 Changing the rebuild token invalidates embedding and grouping fingerprints
 without deleting producer data. Full reset is an administrator action: it takes
@@ -101,19 +104,34 @@ the exporter lock and worker lock, transactionally drops and recreates schema in
 the existing database file, and immediately republishes candidates. It can
 recover an unknown schema version without renaming or replacing the file.
 
-## Grouped page and status
+## Native-label reconciliation and status
 
-The Semantic Groups page opens the shared database in query-only mode and reads
-only group mappings, pipeline/export state, and worker state. It resolves current
-articles through FreshRSS's EntryDAO, paginates groups, skips deleted entries,
-and hides groups that fall below the configured minimum after retention.
+At the start of enabled maintenance, the hook checks whether the worker has
+atomically published the active generation with the expected grouping
+fingerprint. If so, it reconciles that publication before candidate export can
+advance the active generation. If not, it leaves all existing native labels
+unchanged. It also uses the worker advisory lock so a publication cannot change
+during a label pass.
 
-Only HTTP and HTTPS article URLs are linked. All feed-provided titles and content
-are escaped. Database absence, bounded lock contention, stale mappings, and
-worker failure render as no/old groups plus a safe status message; they do not
-break normal FreshRSS reading.
+For a complete publication, each multi-article component gets one native label
+named exactly after its current representative article. All active candidates
+outside those components get the fixed **Single articles** label. Assignments
+are added before stale managed assignments are removed; obsolete managed labels
+are then deleted. Label attributes contain the extension owner and semantic key,
+and the shared database stores the key-to-label mapping plus reconciliation
+generation, fingerprint, timestamps, and bounded errors.
 
-Status includes the selected source and current definition fingerprint, export
-attempt/success, active generation and candidate count, worker attempt/success,
-pending embedding/group work, model/window/threshold, producer lease, and the
-latest bounded error summary. It never exposes traces or host paths.
+An existing personal label with a required name causes only that semantic group
+to be skipped. Its candidates use **Single articles** so each available
+candidate still has exactly one managed semantic label, and the conflict is
+reported. Labels without the extension ownership marker are never renamed,
+populated, or deleted. A missing representative, unsupported exact label name,
+DAO failure, database contention, or incomplete worker generation likewise
+cannot affect ordinary FreshRSS maintenance.
+
+The configuration page reports the selected source and definition fingerprint,
+export attempt/success, active generation and candidate count, worker
+attempt/success, label-sync attempt/success, pending work,
+model/window/threshold, and the latest bounded error summary. It never exposes
+traces or host paths. Article ordering and presentation are entirely native
+FreshRSS behavior under **My labels**.

@@ -65,10 +65,11 @@ lock. An absent database is logged at informational level as not configured.
 - Database lock contention is bounded and deferred to a later timer run.
 - Committed embedding batches remain reusable after a later batch fails.
 - Partial or stale vectors prevent group replacement.
-- A deleted FreshRSS entry is skipped on the grouped page; a group that falls
-  below minimum size is hidden.
-- The page reports a bounded error summary and never displays exception traces
-  or host filesystem paths.
+- A deleted FreshRSS representative or a personal-label name conflict skips the
+  affected group, uses **Single articles** for its available candidates, and
+  records a bounded synchronization error.
+- Incomplete or failed worker publication leaves all prior native semantic
+  labels in place.
 
 FreshRSS 1.29.1 invokes user maintenance before the current feed actualization.
 Newly fetched articles are therefore normally included on the following

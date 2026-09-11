@@ -84,13 +84,18 @@ if [ "$mode_and_group" != '660:33' ]; then
 fi
 
 worker run
-fresh_test verify-groups
-fresh_test verify-page
+fresh_test verify-labels
+
+fresh_test create-conflict
+worker embed
+worker group
+fresh_test verify-conflict
+fresh_test resolve-conflict
 
 fresh_test update-entry
 worker embed
 worker group
-fresh_test verify-groups
+fresh_test verify-labels
 
 fresh_test change-query
 worker embed

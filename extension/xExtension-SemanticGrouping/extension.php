@@ -9,6 +9,7 @@ require_once __DIR__ . '/Models/CandidateSource.php';
 require_once __DIR__ . '/Models/TextNormalizer.php';
 require_once __DIR__ . '/Models/CandidateExporter.php';
 require_once __DIR__ . '/Models/GroupRepository.php';
+require_once __DIR__ . '/Models/LabelReconciler.php';
 
 final class SemanticGroupingExtension extends Minz_Extension {
 	/** @var array<string,mixed> */
@@ -41,13 +42,8 @@ final class SemanticGroupingExtension extends Minz_Extension {
 	#[\Override]
 	public function init(): void {
 		parent::init();
-		$this->registerController('semantic');
-		$this->registerViews();
-		FreshRSS_View::appendStyle($this->getFileUrl('semantic.css'));
-		FreshRSS_View::appendScript($this->getFileUrl('semantic.js'));
 		$this->registerHook(Minz_HookType::EntryBeforeAdd, [$this, 'entryBeforeAdd']);
 		$this->registerHook(Minz_HookType::FreshrssUserMaintenance, [$this, 'userMaintenance']);
-		$this->registerHook(Minz_HookType::MenuOtherEntry, [$this, 'menuEntry']);
 	}
 
 	#[\Override]
@@ -65,8 +61,15 @@ final class SemanticGroupingExtension extends Minz_Extension {
 
 	#[\Override]
 	public function uninstall() {
-		(new SemanticGrouping_CandidateExporter($this->loadConfiguration()))->runSafely(force: true);
-		return true;
+		try {
+			$config = $this->loadConfiguration();
+			$config['enabled'] = false;
+			(new SemanticGrouping_CandidateExporter($config))->runSafely(force: true);
+			(new SemanticGrouping_LabelReconciler())->removeManagedLabels();
+			return true;
+		} catch (Throwable $error) {
+			return 'Could not remove semantic labels: ' . self::safeError($error);
+		}
 	}
 
 	public function entryBeforeAdd(FreshRSS_Entry $entry): ?FreshRSS_Entry {
@@ -84,12 +87,15 @@ final class SemanticGroupingExtension extends Minz_Extension {
 	}
 
 	public function userMaintenance(): void {
-		(new SemanticGrouping_CandidateExporter($this->loadConfiguration()))->runSafely();
-	}
-
-	public function menuEntry(): string {
-		$url = _url('semantic', 'index');
-		return '<li class="item"><a href="' . htmlspecialchars($url, ENT_QUOTES, 'UTF-8') . '">Semantic Groups</a></li>';
+		$config = $this->loadConfiguration();
+		$reconciler = new SemanticGrouping_LabelReconciler();
+		if (empty($config['enabled'])) {
+			(new SemanticGrouping_CandidateExporter($config))->runSafely();
+			$reconciler->removeManagedLabelsSafely();
+		} else {
+			$reconciler->runSafely();
+			(new SemanticGrouping_CandidateExporter($config))->runSafely();
+		}
 	}
 
 	#[\Override]
@@ -116,6 +122,11 @@ final class SemanticGroupingExtension extends Minz_Extension {
 					$this->configuration = $config;
 					if (empty($config['enabled'])) {
 						(new SemanticGrouping_CandidateExporter($config))->runSafely(force: true);
+						try {
+							(new SemanticGrouping_LabelReconciler())->removeManagedLabels();
+						} catch (Throwable $error) {
+							$this->configurationErrors[] = 'Configuration saved, but managed labels could not be removed: ' . self::safeError($error);
+						}
 					}
 					$this->notice = 'Semantic grouping configuration saved.';
 				}

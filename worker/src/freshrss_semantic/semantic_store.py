@@ -16,7 +16,7 @@ from numpy.typing import NDArray
 
 from .config import ConfigurationError, PipelineSnapshot, WorkerConfig
 
-DATABASE_SCHEMA_VERSION = 1
+DATABASE_SCHEMA_VERSION = 2
 
 
 class StoreError(RuntimeError):
@@ -53,7 +53,7 @@ class GroupingInput:
 class PublishedGroup:
     group_id: str
     representative_entry_id: str
-    members: tuple[tuple[str, float], ...]
+    members: tuple[str, ...]
 
 
 def _safe_error(error: BaseException) -> str:
@@ -99,6 +99,8 @@ class SemanticStore:
                 "group_members",
                 "worker_state",
                 "export_state",
+                "managed_labels",
+                "label_sync_state",
             }
             actual = {
                 str(row[0])
@@ -368,8 +370,8 @@ class SemanticStore:
                     ),
                 )
                 db.executemany(
-                    "INSERT INTO group_members(group_id, entry_id, similarity) VALUES (?, ?, ?)",
-                    [(group.group_id, entry_id, score) for entry_id, score in group.members],
+                    "INSERT INTO group_members(group_id, entry_id) VALUES (?, ?)",
+                    [(group.group_id, entry_id) for entry_id in group.members],
                 )
             self.set_state("last_published_generation", str(snapshot.active_generation), db)
             self.set_state("last_successful_group", str(now), db)

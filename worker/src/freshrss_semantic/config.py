@@ -12,6 +12,9 @@ class ConfigurationError(ValueError):
     """The producer published an invalid worker configuration."""
 
 
+MINIMUM_GROUP_SIZE = 2
+
+
 def canonical_json(value: Any) -> str:
     """Return the stable JSON representation used by both fingerprints."""
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
@@ -54,7 +57,6 @@ class WorkerConfig:
     embedding_model: str
     similarity_threshold: float
     window_hours: int
-    minimum_group_size: int
     include_title: bool
     include_content: bool
     content_character_limit: int
@@ -86,7 +88,6 @@ class WorkerConfig:
             embedding_model=model.strip(),
             similarity_threshold=_float(data, "similarity_threshold", 0.0, 1.0),
             window_hours=_int(data, "window_hours", 1, 24 * 365),
-            minimum_group_size=_int(data, "minimum_group_size", 1, 1000),
             include_title=include_title,
             include_content=include_content,
             content_character_limit=_int(data, "content_character_limit", 0, 100_000),
@@ -117,7 +118,7 @@ class WorkerConfig:
         return fingerprint(
             {
                 "embedding_fingerprint": self.embedding_fingerprint,
-                "minimum_group_size": self.minimum_group_size,
+                "minimum_group_size": MINIMUM_GROUP_SIZE,
                 "query_fingerprint": self.query_fingerprint,
                 "similarity_threshold": self.similarity_threshold,
                 "window_hours": self.window_hours,

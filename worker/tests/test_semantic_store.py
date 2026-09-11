@@ -72,9 +72,14 @@ def test_grouping_refuses_partial_or_malformed_vectors(populate) -> None:
 def test_group_publication_rolls_back_without_losing_previous_groups(populate) -> None:
     store = populate(entries=2)
     snapshot = store.load_snapshot()
-    old = PublishedGroup("old", "first", (("first", 1.0), ("second", 0.9)))
+    old = PublishedGroup("old", "first", ("first", "second"))
     store.publish_groups(snapshot, [old])
-    invalid = PublishedGroup("new", "first", (("first", 1.0), ("first", 0.9)))
+    with sqlite3.connect(store.database) as db:
+        assert db.execute("SELECT similarity FROM group_members").fetchall() == [
+            (None,),
+            (None,),
+        ]
+    invalid = PublishedGroup("new", "first", ("first", "first"))
     with pytest.raises(sqlite3.IntegrityError):
         store.publish_groups(snapshot, [invalid])
     with sqlite3.connect(store.database) as db:

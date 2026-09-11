@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import sqlite3
 from pathlib import Path
 
@@ -25,6 +26,18 @@ def test_missing_database_is_an_unconfigured_success(
 def test_worker_lock_is_non_overlapping(database) -> None:
     with worker_lock(database), pytest.raises(AlreadyRunning), worker_lock(database):
         pass
+
+
+def test_worker_lock_tolerates_lock_owned_by_the_freshrss_uid(database, monkeypatch) -> None:
+    real_fchmod = os.fchmod
+
+    def denied(_descriptor: int, _mode: int) -> None:
+        raise PermissionError("owned by FreshRSS")
+
+    monkeypatch.setattr(os, "fchmod", denied)
+    with worker_lock(database):
+        pass
+    monkeypatch.setattr(os, "fchmod", real_fchmod)
 
 
 def test_disabled_and_expired_pipeline_is_not_due(populate) -> None:

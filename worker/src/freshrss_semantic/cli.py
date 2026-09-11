@@ -11,7 +11,7 @@ import subprocess
 import sys
 import time
 from collections.abc import Iterator, Sequence
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from pathlib import Path
 
 from .config import ConfigurationError
@@ -34,7 +34,11 @@ def worker_lock(database: str | Path) -> Iterator[None]:
     lock_path = Path(database).parent / ".semantic-worker.lock"
     descriptor = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o660)
     try:
-        os.fchmod(descriptor, 0o660)
+        # FreshRSS may have created the shared lock first under another UID.
+        # Opening it read/write already proves the shared GID permissions are
+        # sufficient; a non-owner chmod is expected to fail on Linux.
+        with suppress(PermissionError):
+            os.fchmod(descriptor, 0o660)
         try:
             fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError as error:

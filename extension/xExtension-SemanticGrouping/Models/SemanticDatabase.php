@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 final class SemanticGrouping_SemanticDatabase {
 	public const PATH = '/semantic-data/semantic.sqlite';
-	public const SCHEMA_VERSION = 1;
+	public const SCHEMA_VERSION = 2;
 
 	public function __construct(public readonly string $path = self::PATH) {}
 
@@ -57,13 +57,17 @@ final class SemanticGrouping_SemanticDatabase {
 		if ($current === self::SCHEMA_VERSION) {
 			return;
 		}
-		if ($current !== 0) {
+		if (!in_array($current, [0, 1], true)) {
 			throw new RuntimeException('No migration path exists for this semantic database.');
 		}
 		$pdo->beginTransaction();
 		try {
-			foreach (self::schemaStatements() as $sql) {
+			$statements = $current === 0 ? self::schemaStatements() : self::labelSchemaStatements();
+			foreach ($statements as $sql) {
 				$pdo->exec($sql);
+			}
+			if ($current === 1) {
+				$pdo->exec('UPDATE pipeline_config SET database_schema_version = ' . self::SCHEMA_VERSION);
 			}
 			$pdo->exec('PRAGMA user_version = ' . self::SCHEMA_VERSION);
 			$pdo->commit();
@@ -78,7 +82,7 @@ final class SemanticGrouping_SemanticDatabase {
 
 	/** @return list<string> */
 	private static function schemaStatements(): array {
-		return [
+		return array_merge([
 			'CREATE TABLE pipeline_config (
 				singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
 				database_schema_version INTEGER NOT NULL,
@@ -138,6 +142,20 @@ final class SemanticGrouping_SemanticDatabase {
 			) WITHOUT ROWID',
 			'CREATE TABLE worker_state (key TEXT PRIMARY KEY, value TEXT NOT NULL) WITHOUT ROWID',
 			'CREATE TABLE export_state (key TEXT PRIMARY KEY, value TEXT NOT NULL) WITHOUT ROWID',
+		], self::labelSchemaStatements());
+	}
+
+	/** @return list<string> */
+	private static function labelSchemaStatements(): array {
+		return [
+			'CREATE TABLE managed_labels (
+				semantic_key TEXT PRIMARY KEY,
+				label_id INTEGER NOT NULL UNIQUE,
+				label_name TEXT NOT NULL,
+				selection_generation INTEGER NOT NULL,
+				updated_at INTEGER NOT NULL
+			) WITHOUT ROWID',
+			'CREATE TABLE label_sync_state (key TEXT PRIMARY KEY, value TEXT NOT NULL) WITHOUT ROWID',
 		];
 	}
 

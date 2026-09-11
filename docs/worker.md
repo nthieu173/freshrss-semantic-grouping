@@ -28,7 +28,7 @@ invokes it every 10 minutes with a stable, randomized per-host offset of up to
 ## Configuration snapshot
 
 The worker reads only `pipeline_config` from the fixed semantic database. It
-validates database schema 1 and the published configuration, then snapshots the
+validates database schema 2 and the published configuration, then snapshots the
 active generation and configuration revision. It rechecks both inside each
 write transaction that could affect a visible result.
 
@@ -67,9 +67,11 @@ if SemHash unexpectedly attempts text encoding, guaranteeing that the Model2Vec
 model is not resident during grouping.
 
 SemHash duplicate edges are combined with union-find into connected components.
-Components smaller than `minimum_group_size` are dropped. The earliest
-`(received_at, entry_id)` is the representative; its versioned SHA-256-derived
-ID names the group, and cosine similarity to it is stored for every member.
+Components smaller than two articles are always dropped. The earliest
+`(received_at, entry_id)` is the representative and its versioned
+SHA-256-derived ID names the group. Publication stores only group identity,
+representative identity, and membership; it does not calculate member cosine
+similarities.
 
 All groups are computed before a write transaction starts. Publication rechecks
 the generation and revision, atomically replaces group and membership tables,

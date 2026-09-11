@@ -3,9 +3,9 @@
 ## Status and scope
 
 This document describes the architecture implemented by the paired FreshRSS
-extension and Python worker in this repository. The version 0.1.0 design targets
-FreshRSS 1.29.1, Python 3.14, `linux/arm64`, extension configuration schema 2,
-and semantic database schema 1.
+extension and Python worker in this repository. The version 0.11.0 design targets
+FreshRSS 1.29.1, Python 3.14, `linux/arm64`, extension configuration schema 3,
+and semantic database schema 2.
 
 The extension owns user interaction, FreshRSS integration, candidate selection,
 and candidate publication. The worker owns embeddings and semantic groups. The
@@ -20,12 +20,13 @@ The initial scope is one configured FreshRSS user and includes:
 - title and optional truncated-content embedding input;
 - cached Model2Vec float32 embeddings;
 - SemHash grouping through its USearch backend;
-- a separate paginated Semantic Groups page;
+- native FreshRSS labels for semantic groups and single articles;
 - extension-owned full reset and worker-owned derived-data rebuild;
 - separate embedding and grouping processes under a 400 MiB worker limit.
 
-Semantic grouping never marks, deletes, or suppresses FreshRSS entries. Exact
-title rejection is the only ingestion-time deletion.
+Semantic grouping never marks, deletes, or suppresses FreshRSS entries. It
+changes only extension-owned label assignments. Exact-title rejection is the
+only ingestion-time deletion.
 
 ## System context
 
@@ -37,9 +38,9 @@ FreshRSS container
           v
  /semantic-data/semantic.sqlite
           ^                         |
-          | published groups/status | active candidates/configuration
+          | native labels/status     | active candidates/configuration
           |                         v
-  Semantic Groups page       Python worker
+  FreshRSS My labels         Python worker
                              Model2Vec -> SemHash/USearch
 ```
 
@@ -65,6 +66,7 @@ The extension is authoritative for:
 - extension configuration and candidate-source identity;
 - effective worker configuration and the renewable producer lease;
 - candidate generations and immutable article input versions;
+- extension-owned native labels and reconciliation state;
 - exact-title admission decisions;
 - schema creation, migration, and full reset.
 
@@ -133,7 +135,7 @@ An embedding is current only when both its source hash and embedding fingerprint
 match. The embedding fingerprint covers the model, selected fields, content
 limit, normalization/input format versions, and explicit rebuild token. The
 grouping fingerprint additionally covers the query fingerprint, rolling window,
-threshold, and minimum group size.
+threshold, and the fixed minimum group size of two.
 
 This split avoids recomputing vectors for grouping-only changes while ensuring
 that every text or model change invalidates the appropriate cache. Old vectors
@@ -141,10 +143,12 @@ and groups stay usable until a complete replacement can be published.
 
 ## Scheduling and liveness
 
-FreshRSS user maintenance performs bounded candidate reconciliation. FreshRSS
-1.29.1 runs this hook before the current feed actualization, so newly fetched
-entries normally enter the following maintenance export. This one-cycle lag is
-an accepted initial-release tradeoff.
+FreshRSS user maintenance first reconciles any complete worker publication into
+native labels, then performs bounded candidate reconciliation. This ordering
+prevents a due export from outrunning a result published since the preceding
+maintenance pass. FreshRSS 1.29.1 runs this hook before the current feed
+actualization, so newly fetched entries normally enter the following maintenance
+export. This one-cycle lag is an accepted initial-release tradeoff.
 
 Every successful export renews a producer lease for three export intervals with
 a 90-minute minimum. The worker performs no new work after expiry or when the
@@ -171,8 +175,8 @@ advisory worker lock before spawning separate cleanup, embed, and group phases.
   last complete groups intact.
 - The worker refuses an unknown schema and never migrates, renames, replaces, or
   resets the shared database.
-- The grouped page is query-only and tolerates a missing database, lock
-  contention, stale references, and FreshRSS retention.
+- Label reconciliation runs only for a completely published active generation;
+  lock contention, stale references, and worker failure preserve prior labels.
 - Disablement or lease expiry stops new semantic work without deleting the last
   publication.
 
@@ -182,15 +186,17 @@ same writer; cross-owner references are checked in application logic and tests.
 
 ## Identity and presentation
 
-SemHash duplicate relationships are converted to connected components. The
-earliest `(received_at, entry_id)` member is the representative. The group ID is
-a versioned SHA-256-derived value based on that representative, and member
-similarity is cosine similarity to it.
+SemHash duplicate relationships are converted to connected components. Only
+components with at least two articles are published. The earliest
+`(received_at, entry_id)` member is the representative, and the group ID is a
+versioned SHA-256-derived value based on that representative. Per-member
+similarity is not calculated or published.
 
-The grouped page reads semantic mappings and status in query-only mode, then
-resolves current titles, URLs, state, and content through FreshRSS. Missing
-entries are skipped, groups below the configured minimum are hidden, URLs are
-restricted to HTTP(S), and feed-provided content is escaped.
+After complete worker publication, FreshRSS maintenance resolves representative
+titles through FreshRSS and reconciles each component into an extension-owned
+native label. Candidates outside every multi-article component receive the fixed
+**Single articles** label. Ownership is recorded in label attributes and in the
+semantic database; personal labels are never renamed, populated, or deleted.
 
 ## Security, privacy, and recovery
 

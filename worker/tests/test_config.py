@@ -22,11 +22,9 @@ def test_configuration_rejects_implicit_empty_input() -> None:
         WorkerConfig.from_mapping(worker_config(include_title=False, include_content=False))
 
 
-def test_minimum_group_size_accepts_one_and_rejects_zero() -> None:
-    config = WorkerConfig.from_mapping(worker_config(minimum_group_size=1))
-    assert config.minimum_group_size == 1
-    with pytest.raises(ConfigurationError, match="minimum_group_size"):
-        WorkerConfig.from_mapping(worker_config(minimum_group_size=0))
+def test_legacy_minimum_group_size_is_ignored() -> None:
+    config = WorkerConfig.from_mapping(worker_config(minimum_group_size=999))
+    assert not hasattr(config, "minimum_group_size")
 
 
 def test_canonical_json_is_compact_and_sorted() -> None:
@@ -41,5 +39,5 @@ def test_default_fingerprints_match_the_php_producer_contract() -> None:
         "735c7ecc39088db6c69eff6eecb21a27d5d78d31652f6b745d4c715eaf8dcfdf"
     )
     assert config.grouping_fingerprint == (
-        "080b4282f97c752a94011a4c2acaf67c11253b03ab3d4b47810eb96678b0b606"
+        "e6d4cc696bdc21c3fc389f4a15ba7ccdc50d53d24c0ae8eb7bd79eae718171bf"
     )

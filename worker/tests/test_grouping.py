@@ -19,32 +19,28 @@ class Result:
     filtered: list[Duplicate]
 
 
-def test_result_conversion_uses_earliest_member_and_minimum_size() -> None:
+def test_result_conversion_uses_earliest_member_and_fixed_minimum_size() -> None:
     inputs = [
         GroupingInput("late", 20, np.array([0.9, 0.1], dtype=np.float32)),
         GroupingInput("early", 10, np.array([1.0, 0.0], dtype=np.float32)),
         GroupingInput("alone", 5, np.array([0.0, 1.0], dtype=np.float32)),
     ]
     result = Result([Duplicate({"entry_id": "late"}, [({"entry_id": "early"}, 0.99)])])
-    groups = groups_from_result(result, inputs, 2)
+    groups = groups_from_result(result, inputs)
     assert len(groups) == 1
     assert groups[0].representative_entry_id == "early"
-    assert [member[0] for member in groups[0].members] == ["early", "late"]
+    assert list(groups[0].members) == ["early", "late"]
 
 
-def test_minimum_size_one_publishes_singleton_groups() -> None:
+def test_singleton_components_are_not_published_as_groups() -> None:
     inputs = [
         GroupingInput("first", 10, np.array([1.0, 0.0], dtype=np.float32)),
         GroupingInput("second", 20, np.array([0.0, 1.0], dtype=np.float32)),
     ]
 
-    groups = groups_from_result(Result([]), inputs, 1)
+    groups = groups_from_result(Result([]), inputs)
 
-    assert [group.representative_entry_id for group in groups] == ["first", "second"]
-    assert [group.members for group in groups] == [
-        (("first", 1.0),),
-        (("second", 1.0),),
-    ]
+    assert groups == []
 
 
 def test_group_phase_publishes_only_after_all_embeddings_exist(populate) -> None:
@@ -70,7 +66,7 @@ def test_group_phase_publishes_only_after_all_embeddings_exist(populate) -> None
                 ]
             )
 
-    assert group(store, lambda _vectors, _records: FakeSemHash()) == 2
+    assert group(store, lambda _vectors, _records: FakeSemHash()) == 1
     assert store.get_state("last_published_generation") == "1"
 
 

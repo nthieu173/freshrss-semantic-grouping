@@ -73,11 +73,10 @@ $formatTime = static function (mixed $value): string {
 	</div>
 
 	<div class="form-group">
-		<label class="group-name">Refresh and sizing</label>
+		<label class="group-name">Refresh and processing</label>
 		<div class="group-controls">
 			<div class="semantic-grid">
 				<label>Refresh interval (minutes) <input type="number" min="10" max="1440" step="10" name="candidate_export_interval_minutes" value="<?= (int)$config['candidate_export_interval_minutes'] ?>" required="required" /></label>
-				<label>Minimum group size <input type="number" min="1" max="1000" name="minimum_group_size" value="<?= (int)$config['minimum_group_size'] ?>" required="required" /></label>
 				<label>Embedding batch size <input type="number" min="1" max="256" name="embedding_batch_size" value="<?= (int)$config['embedding_batch_size'] ?>" required="required" /></label>
 			</div>
 			<p class="help">The worker checks for exported changes every 10 minutes at a stable, randomized offset of up to 10 minutes. Values below 10 minutes or between 10-minute increments cannot refresh groups sooner.</p>
@@ -107,12 +106,23 @@ $formatTime = static function (mixed $value): string {
 	$pipeline = $status['pipeline'];
 	$worker = $status['worker'];
 	$export = $status['export'];
+	$labelSync = $status['label_sync'];
 	$effective = $status['config'];
 	$workerError = trim((string)($worker['latest_error'] ?? ''));
 	$exportError = trim((string)($export['last_export_error'] ?? ''));
-	$latestError = $exportError !== '' && (int)($export['last_export_error_at'] ?? 0) >= (int)($worker['latest_error_at'] ?? 0)
-		? $exportError
-		: $workerError;
+	$labelError = trim((string)($labelSync['latest_error'] ?? ''));
+	$errorCandidates = [];
+	foreach ([
+		[(int)($worker['latest_error_at'] ?? 0), $workerError],
+		[(int)($export['last_export_error_at'] ?? 0), $exportError],
+		[(int)($labelSync['latest_error_at'] ?? 0), $labelError],
+	] as [$errorTime, $errorText]) {
+		if ($errorText !== '') {
+			$errorCandidates[] = [$errorTime, $errorText];
+		}
+	}
+	usort($errorCandidates, static fn(array $left, array $right): int => $right[0] <=> $left[0]);
+	$latestError = (string)($errorCandidates[0][1] ?? '');
 	?>
 	<dl class="semantic-status">
 		<dt>Candidate source</dt><dd><?= $escaped($status['current_query_name'] ?? $effective['candidate_source']['query_name'] ?? 'Unknown') ?></dd>
@@ -121,9 +131,10 @@ $formatTime = static function (mixed $value): string {
 		<dt>Active generation</dt><dd><?= (int)$pipeline['active_generation'] ?> (<?= (int)$status['candidate_count'] ?> candidates)</dd>
 		<dt>Last worker attempt / success</dt><dd><?= $formatTime($worker['last_attempted_run'] ?? 0) ?> / <?= $formatTime($worker['last_successful_run'] ?? 0) ?></dd>
 		<dt>Embeddings</dt><dd><?= (int)$status['current_embeddings'] ?> current, <?= (int)$status['pending_embeddings'] ?> pending</dd>
+		<dt>Last label synchronization attempt / success</dt><dd><?= $formatTime($labelSync['last_attempt'] ?? 0) ?> / <?= $formatTime($labelSync['last_success'] ?? 0) ?></dd>
 		<dt>Model</dt><dd><?= $escaped($effective['embedding_model'] ?? '') ?></dd>
 		<dt>Window / threshold</dt><dd><?= (int)($effective['window_hours'] ?? 0) ?> hours / <?= $escaped($effective['similarity_threshold'] ?? '') ?></dd>
-		<dt>Pending work</dt><dd><?= !empty($status['export_pending']) ? 'export ' : '' ?><?= (int)$status['pending_embeddings'] > 0 ? 'embedding ' : '' ?><?= !empty($status['grouping_pending']) ? 'regrouping' : '' ?><?= empty($status['export_pending']) && (int)$status['pending_embeddings'] === 0 && empty($status['grouping_pending']) ? 'None' : '' ?></dd>
+		<dt>Pending work</dt><dd><?= !empty($status['export_pending']) ? 'export ' : '' ?><?= (int)$status['pending_embeddings'] > 0 ? 'embedding ' : '' ?><?= !empty($status['grouping_pending']) ? 'regrouping ' : '' ?><?= !empty($status['label_sync_pending']) ? 'label synchronization' : '' ?><?= empty($status['export_pending']) && (int)$status['pending_embeddings'] === 0 && empty($status['grouping_pending']) && empty($status['label_sync_pending']) ? 'None' : '' ?></dd>
 		<dt>Latest error</dt><dd><?= $escaped($latestError) ?: 'None' ?></dd>
 	</dl>
 <?php endif; ?>

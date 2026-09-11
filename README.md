@@ -3,12 +3,13 @@
 FreshRSS Semantic Grouping is a versioned pair: a FreshRSS user extension and
 an offline Python worker. The extension rejects exact normalized-title
 duplicates, exports one complete generation selected by a native FreshRSS saved
-query, and renders the last published semantic groups. The worker sees only the
+query, and reconciles the last published semantic groups into native FreshRSS
+labels. The worker sees only the
 shared semantic database; it never mounts or queries FreshRSS application data.
 
 The first release targets FreshRSS **1.29.1**, Python **3.14**, and
-`linux/arm64`. The shared database schema version is **1** and the extension
-configuration schema version is **2**.
+`linux/arm64`. The shared database schema version is **2** and the extension
+configuration schema version is **3**.
 
 ## Data flow
 
@@ -19,13 +20,14 @@ FreshRSS entries + saved query
           v
  /semantic-data/semantic.sqlite
           ^                 |
-          | groups/status   | active candidates
+          | labels/status   | active candidates
           |                 v
-   grouped page      Model2Vec -> SemHash/USearch
+ FreshRSS My labels  Model2Vec -> SemHash/USearch
 ```
 
 Only exact-title duplicates are rejected during ingestion. Semantic grouping
-does not mark, delete, or otherwise mutate FreshRSS entries.
+adds and removes extension-owned native label assignments; it does not mark or
+delete FreshRSS entries and never changes personal labels.
 
 ## Repository contents
 
@@ -33,7 +35,7 @@ does not mark, delete, or otherwise mutate FreshRSS entries.
 - `worker`: locked Python package and CLI;
 - `packaging/Containerfile`: non-root worker image with the default model
   bundled at build time;
-- `fixtures`: the version-1 database contract used by tests;
+- `fixtures`: versioned database contracts used by tests and migration checks;
 - `docs`: configuration, database, and deployment details.
 
 ## Quick start
@@ -52,8 +54,8 @@ does not mark, delete, or otherwise mutate FreshRSS entries.
    freshrss-semantic run
    ```
 
-5. Open **Semantic Groups** from the FreshRSS menu. Reloading the page reads the
-   latest complete publication; it never launches worker work.
+5. After the worker publishes, let FreshRSS run user maintenance once. Semantic
+   groups and the fixed **Single articles** bucket then appear under **My labels**.
 
 Worker commands are `validate-config`, `embed`, `group`, `cleanup`, `run`, and
 `rebuild`. `run` executes embedding and grouping in separate child processes so

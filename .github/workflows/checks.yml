@@ -76,12 +76,11 @@ jobs:
           python3 - <<'PY'
           import json, sqlite3, time
           db = sqlite3.connect('.ci-semantic/semantic.sqlite')
-          db.executescript(open('fixtures/semantic-schema-v1.sql').read())
+          db.executescript(open('fixtures/semantic-schema-v2.sql').read())
           now = int(time.time())
           config = {
               'enabled': True, 'embedding_model': 'minishlab/potion-base-8M',
               'similarity_threshold': .25, 'window_hours': 72,
-              'minimum_group_size': 2,
               'include_title': True, 'include_content': False,
               'content_character_limit': 2000, 'embedding_batch_size': 128,
               'normalization_version': 1, 'query_fingerprint': 'smoke',
@@ -95,7 +94,7 @@ jobs:
           db.executemany('INSERT INTO article_inputs VALUES (?,?,?,?,?,?)', inputs)
           db.executemany('INSERT INTO candidate_members VALUES (?,?,?)',
                          [(1, row[0], row[4]) for row in inputs])
-          db.execute('INSERT INTO pipeline_config VALUES (1,1,?,?,?,?,?)',
+          db.execute('INSERT INTO pipeline_config VALUES (1,2,?,?,?,?,?)',
                      ('smoke', 1, now + 5400, json.dumps(config), now))
           db.commit()
           db.close()

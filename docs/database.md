@@ -2,7 +2,7 @@
 
 The fixed runtime path is `/semantic-data/semantic.sqlite`. No browser parameter
 can change it. The extension creates and migrates the database; the worker
-validates schema version 1 and refuses to migrate, rename, delete, or replace an
+validates schema version 2 and refuses to migrate, rename, delete, or replace an
 unknown database.
 
 All connections enable foreign keys, use rollback journaling, wait at most five
@@ -13,12 +13,15 @@ index construction happen outside write transactions.
 
 | Owner | Tables |
 |---|---|
-| Extension | `pipeline_config`, `candidate_generations`, `article_inputs`, `candidate_members`, `export_state` |
+| Extension | `pipeline_config`, `candidate_generations`, `article_inputs`, `candidate_members`, `export_state`, `managed_labels`, `label_sync_state` |
 | Worker | `embeddings`, `groups`, `group_members`, `worker_state` |
 
 Foreign keys exist only within a single writer's table set. Cross-owner
 references are validated during loading and cleanup rather than by cascades.
-The complete DDL is checked in at `fixtures/semantic-schema-v1.sql`.
+The complete DDL is checked in at `fixtures/semantic-schema-v2.sql`. The v1
+fixture is retained to verify the additive v1-to-v2 migration. Its nullable
+`group_members.similarity` column remains for additive compatibility but new
+workers leave it null.
 
 ## Generation publication
 
@@ -37,11 +40,16 @@ Embeddings are contiguous little-endian float32 BLOBs. Readers reject a BLOB
 whose byte length is not `dimensions * 4`, non-finite vectors, and mixed
 dimensions in one active generation.
 
+`managed_labels` durably maps semantic keys to native FreshRSS label IDs and
+names. `label_sync_state` records the last attempted and completed generation,
+fingerprint, and bounded error. Native label attributes are the cleanup
+authority if this reproducible database is reset or unavailable.
+
 ## Upgrade and recovery
 
 For a schema upgrade, stop the worker, install the paired extension/worker
 release, enable or install the extension so its transactional migration runs,
-then start the new worker. Do not migrate from a normal grouped-page request.
+then start the new worker. The worker never performs this migration.
 
 Worker `rebuild` takes the worker advisory lock and deletes only embeddings,
 groups, group members, and worker state. The extension's administrator-only full

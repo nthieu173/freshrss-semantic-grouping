@@ -8,8 +8,10 @@ declare(strict_types=1);
  *   php /integration/freshrss.php setup
  *   php /integration/freshrss.php verify-exact-disabled
  *   php /integration/freshrss.php verify-pipeline-disabled-exact
- *   php /integration/freshrss.php verify-groups
- *   php /integration/freshrss.php verify-page
+ *   php /integration/freshrss.php verify-labels
+ *   php /integration/freshrss.php create-conflict
+ *   php /integration/freshrss.php verify-conflict
+ *   php /integration/freshrss.php resolve-conflict
  *   php /integration/freshrss.php update-entry
  *   php /integration/freshrss.php change-query
  *   php /integration/freshrss.php verify-empty-groups
@@ -90,6 +92,39 @@ function candidateHashes(PDO $database, int $generation): array {
 	return $result;
 }
 
+/** @return array<string,array{id:int,name:string,attributes:array<string,mixed>}> */
+function semanticLabels(): array {
+	$result = [];
+	foreach (FreshRSS_Factory::createTagDao()->selectAll() as $row) {
+		$attributes = $row['attributes'] ?? [];
+		if (is_string($attributes)) {
+			$attributes = json_decode($attributes, true);
+		}
+		$ownership = is_array($attributes) ? ($attributes[SemanticGrouping_LabelReconciler::OWNER_ATTRIBUTE] ?? null) : null;
+		if (is_array($ownership) && ($ownership['owner'] ?? null) === SemanticGrouping_LabelReconciler::OWNER_ID
+				&& is_string($ownership['semantic_key'] ?? null)) {
+			$result[$ownership['semantic_key']] = [
+				'id' => (int)$row['id'],
+				'name' => (string)$row['name'],
+				'attributes' => $attributes,
+			];
+		}
+	}
+	return $result;
+}
+
+/** @return list<string> */
+function checkedLabelNames(string $entryId): array {
+	$names = [];
+	foreach (FreshRSS_Factory::createTagDao()->getTagsForEntry($entryId) as $tag) {
+		if (!empty($tag['checked'])) {
+			$names[] = (string)$tag['name'];
+		}
+	}
+	sort($names);
+	return $names;
+}
+
 /** @return array<string,mixed> */
 function entryValues(
 	string $id,
@@ -151,7 +186,6 @@ function pipelineConfig(): array {
 		'similarity_threshold' => 0.25,
 		'window_hours' => 72,
 		'candidate_export_interval_minutes' => 30,
-		'minimum_group_size' => 2,
 		'include_title' => true,
 		'include_content' => false,
 		'content_character_limit' => 2000,
@@ -171,7 +205,6 @@ function configureWhileDisabled(): void {
 		'similarity_threshold' => '0.75',
 		'window_hours' => '48',
 		'candidate_export_interval_minutes' => '20',
-		'minimum_group_size' => '3',
 		'include_title' => '1',
 		'content_character_limit' => '1234',
 		'exact_title_enabled' => '1',
@@ -190,8 +223,9 @@ function configureWhileDisabled(): void {
 		same($extension->configuration['force_rebuild_token'], '', 'Saving unexpectedly changed the rebuild token');
 		FreshRSS_Context::initUser('admin');
 		$stored = FreshRSS_Context::userConf()->extensions[SEMANTIC_EXTENSION_NAME] ?? null;
-		check(is_array($stored), 'Configuration was not persisted through FreshRSS');
-		same($stored, $extension->configuration, 'Reloaded FreshRSS configuration differs from the submitted settings');
+			check(is_array($stored), 'Configuration was not persisted through FreshRSS');
+			same($stored, $extension->configuration, 'Reloaded FreshRSS configuration differs from the submitted settings');
+			check(!array_key_exists('minimum_group_size', $stored), 'Configurable minimum group size was persisted');
 	} finally {
 		Minz_Request::_params($previousParams);
 		if ($previousMethod === null) {
@@ -375,7 +409,7 @@ function setup(): void {
 
 	$config = $extension->loadConfiguration();
 	same(SemanticGrouping_Config::validate($config), [], 'Stored configuration did not validate');
-	check(str_contains(Minz_ExtensionManager::callHookString(Minz_HookType::MenuOtherEntry), 'Semantic Groups'), 'Menu hook was not registered');
+	check(!str_contains(Minz_ExtensionManager::callHookString(Minz_HookType::MenuOtherEntry), 'Semantic Groups'), 'Removed Semantic Groups menu entry was registered');
 
 	$duplicate = new FreshRSS_Entry($feedId, 'incoming-duplicate', '  SEMANTIC city council approves climate plan  ');
 	same(Minz_ExtensionManager::callHook(Minz_HookType::EntryBeforeAdd, $duplicate), null, 'Existing normalized-title duplicate was accepted');
@@ -466,48 +500,129 @@ function setup(): void {
 	]);
 }
 
-function verifyGroups(): void {
+function verifyLabels(): void {
 	configuredExtension();
 	$state = fixture();
+	// Force candidate export to be due in the same maintenance pass. Label
+	// synchronization must consume the completed worker publication before the
+	// exporter advances active_generation.
+	semanticDatabase()->exec("UPDATE export_state SET value='0' WHERE key='last_export_success'");
+	Minz_ExtensionManager::callHookVoid(Minz_HookType::FreshrssUserMaintenance);
 	$repository = new SemanticGrouping_GroupRepository();
 	$status = $repository->status();
 	same((int)$status['pending_embeddings'], 0, 'Worker left active candidate embeddings pending');
 	same((int)$status['worker']['last_published_generation'], (int)$state['generation'], 'Worker published the wrong generation');
-	$result = $repository->groups(1);
-	same(count($result['groups']), 1, 'Expected one semantic group');
-	$ids = array_map(static fn(array $member): string => (string)$member['id'], $result['groups'][0]['members']);
+	same((int)$status['label_sync']['last_reconciled_generation'], (int)$state['generation'], 'Native labels did not reconcile the worker generation');
+	check((int)$status['pipeline']['active_generation'] > (int)$state['generation'], 'Due export did not exercise label-before-export maintenance ordering');
+	$database = semanticDatabase();
+	$ids = $database->query('SELECT entry_id FROM group_members ORDER BY entry_id')->fetchAll(PDO::FETCH_COLUMN);
+	$ids = array_map('strval', $ids);
 	sort($ids);
 	$expected = [(string)$state['ids']['first'], (string)$state['ids']['second']];
 	sort($expected);
-	same($ids, $expected, 'Grouped page did not resolve the current FreshRSS entries');
-}
+	same($ids, $expected, 'Worker published the wrong group membership');
+	$labels = semanticLabels();
+	same(count($labels), 2, 'Expected one semantic group label and the singleton bucket');
+	$groupLabels = array_filter($labels, static fn(array $label, string $key): bool => $key !== SemanticGrouping_LabelReconciler::SINGLETON_KEY, ARRAY_FILTER_USE_BOTH);
+	same(count($groupLabels), 1, 'Expected exactly one multi-article semantic label');
+	$groupLabel = reset($groupLabels);
+	check(is_array($groupLabel), 'Semantic group label was not found');
+	$representativeId = (string)$database->query('SELECT representative_entry_id FROM groups LIMIT 1')->fetchColumn();
+	$representative = iterator_to_array(FreshRSS_Factory::createEntryDao()->listByIds([$representativeId]), false)[0] ?? null;
+	check($representative instanceof FreshRSS_Entry, 'Published representative was not found in FreshRSS');
+	same($groupLabel['name'], $representative->title(), 'Group label did not use the representative title');
+	check(isset($labels[SemanticGrouping_LabelReconciler::SINGLETON_KEY]), 'Single articles label was not maintained for an empty bucket');
+	foreach ($expected as $entryId) {
+		$names = checkedLabelNames($entryId);
+		check(in_array($groupLabel['name'], $names, true), 'Candidate did not receive its semantic group label');
+	}
 
-function verifyPage(): void {
-	configuredExtension();
 	Minz_Session::_param('passwordHash', FreshRSS_Context::userConf()->passwordHash);
-	check(FreshRSS_Auth::giveAccess(), 'Could not authenticate the semantic page render.');
+	check(FreshRSS_Auth::giveAccess(), 'Could not authenticate the native reader render.');
 
 	$previousRequest = Minz_Request::currentRequest();
 	try {
-		Minz_Request::_controllerName('semantic');
-		Minz_Request::_actionName('index');
-		Minz_Request::_params([]);
-		require_once __DIR__ . '/Controllers/semanticController.php';
-		$controller = new FreshExtension_semantic_Controller();
+		Minz_Request::_controllerName('index');
+		Minz_Request::_actionName('normal');
+		Minz_Request::_params(['get' => 't_' . $groupLabel['id']]);
+		$controller = new FreshRSS_index_Controller();
 		$controller->firstAction();
-		$controller->indexAction();
-		$rendered = $controller->view()->renderToString();
+		$controller->normalAction();
+		$view = $controller->view();
+		$view->tags = FreshRSS_Context::labels(precounts: true);
+		$view->nbUnreadTags = 0;
+		foreach ($view->tags as $tag) {
+			$view->nbUnreadTags += $tag->nbUnread();
+		}
+		$rendered = $view->renderToString();
 	} finally {
 		Minz_Request::_controllerName($previousRequest['c']);
 		Minz_Request::_actionName($previousRequest['a']);
 		Minz_Request::_params($previousRequest['params']);
 	}
 
-	check(str_contains($rendered, 'id="aside_feed"'), 'Authenticated semantic page did not render the feed sidebar.');
-	check(str_contains($rendered, 'Integration label'), 'Authenticated semantic page did not render FreshRSS labels.');
-	check(str_contains($rendered, 'Integration included feed'), 'Authenticated semantic page did not render FreshRSS categories.');
-	check(str_contains($rendered, '<h1>Semantic Groups</h1>'), 'Authenticated semantic page did not render its heading.');
-	check(str_contains($rendered, 'Semantic city council approves climate plan'), 'Authenticated semantic page did not render published groups.');
+	check(str_contains($rendered, 'id="aside_feed"'), 'Native reader did not render the feed sidebar.');
+	check(str_contains($rendered, 'Integration label'), 'Native My labels did not retain the personal label.');
+	check(str_contains($rendered, 'Single articles'), 'Native My labels did not render the singleton bucket.');
+	check(str_contains($rendered, htmlspecialchars($representative->title(), ENT_COMPAT, 'UTF-8')), 'Native My labels did not render the semantic group.');
+}
+
+function createConflict(): void {
+	$extension = configuredExtension();
+	$state = fixture();
+	$entryId = (string)$state['ids']['first'];
+	$entry = iterator_to_array(FreshRSS_Factory::createEntryDao()->listByIds([$entryId]), false)[0] ?? null;
+	check($entry instanceof FreshRSS_Entry, 'Conflict representative was not found');
+	$title = 'Semantic ownership conflict representative';
+	$values = entryValues(
+		$entryId,
+		(int)$state['feed_id'],
+		'included-1',
+		$title,
+		'<p>Conflict title</p>',
+		(int)$entry->date(raw: true),
+		(bool)$entry->isRead(),
+		(bool)$entry->isFavorite(),
+	);
+	$values['lastModified'] = time();
+	check(FreshRSS_Factory::createEntryDao()->updateEntry($values), 'Could not update the representative for the ownership conflict');
+	$labelId = FreshRSS_Factory::createTagDao()->addTag(['name' => $title]);
+	check(is_int($labelId), 'Could not create the conflicting personal label');
+	$config = $extension->loadConfiguration();
+	check((new SemanticGrouping_CandidateExporter($config))->export(force: true), 'Conflict generation export did not run');
+	$database = semanticDatabase();
+	$state['generation'] = (int)$database->query('SELECT active_generation FROM pipeline_config WHERE singleton=1')->fetchColumn();
+	$state['hashes'] = candidateHashes($database, $state['generation']);
+	$state['conflict_label_id'] = $labelId;
+	$state['conflict_title'] = $title;
+	saveFixture($state);
+}
+
+function verifyConflict(): void {
+	configuredExtension();
+	$state = fixture();
+	Minz_ExtensionManager::callHookVoid(Minz_HookType::FreshrssUserMaintenance);
+	$status = (new SemanticGrouping_GroupRepository())->status();
+	same((int)$status['worker']['last_published_generation'], (int)$state['generation'], 'Conflict generation was not published');
+	check(str_contains((string)$status['label_sync']['latest_error'], 'personal label'), 'Personal-label ownership conflict was not reported');
+	$personal = FreshRSS_Factory::createTagDao()->searchById((int)$state['conflict_label_id']);
+	check($personal instanceof FreshRSS_Tag && $personal->name() === $state['conflict_title'], 'Conflicting personal label was commandeered');
+	check(!in_array($state['conflict_title'], checkedLabelNames((string)$state['ids']['first']), true), 'Conflicting personal label was populated');
+	same(array_keys(semanticLabels()), [SemanticGrouping_LabelReconciler::SINGLETON_KEY], 'Skipped conflict group did not fall back to Single articles');
+	check(in_array('Single articles', checkedLabelNames((string)$state['ids']['first']), true), 'Conflicted representative lost its managed fallback label');
+	check(in_array('Single articles', checkedLabelNames((string)$state['ids']['second']), true), 'Conflicted member lost its managed fallback label');
+}
+
+function resolveConflict(): void {
+	configuredExtension();
+	$state = fixture();
+	check(FreshRSS_Factory::createTagDao()->deleteTag((int)$state['conflict_label_id']) !== false, 'Could not remove the conflict fixture label');
+	Minz_ExtensionManager::callHookVoid(Minz_HookType::FreshrssUserMaintenance);
+	$status = (new SemanticGrouping_GroupRepository())->status();
+	same((string)$status['label_sync']['latest_error'], '', 'Resolved ownership conflict remained in status');
+	$labels = semanticLabels();
+	$names = array_column($labels, 'name');
+	check(in_array((string)$state['conflict_title'], $names, true), 'Resolved group did not receive its representative-title label');
 }
 
 function verifyExactDisabled(): void {
@@ -627,23 +742,31 @@ function changeQuery(): void {
 function verifyEmptyGroups(): void {
 	configuredExtension();
 	$state = fixture();
+	Minz_ExtensionManager::callHookVoid(Minz_HookType::FreshrssUserMaintenance);
 	$repository = new SemanticGrouping_GroupRepository();
 	$status = $repository->status();
 	same((int)$status['worker']['last_published_generation'], (int)$state['generation'], 'Replacement grouping did not publish');
-	$result = $repository->groups(1);
-	same($result['groups'], [], 'A one-entry generation produced a semantic group');
+	same((int)semanticDatabase()->query('SELECT COUNT(*) FROM groups')->fetchColumn(), 0, 'A one-entry generation produced a semantic group');
+	$labels = semanticLabels();
+	same(array_keys($labels), [SemanticGrouping_LabelReconciler::SINGLETON_KEY], 'Retired group label was not deleted');
+	check(in_array('Single articles', checkedLabelNames((string)$state['ids']['text_excluded']), true), 'Remaining candidate was not placed in Single articles');
 }
 
 function disablePipeline(): void {
 	$extension = configuredExtension();
-	$config = $extension->loadConfiguration();
-	$config['enabled'] = false;
-	same((new SemanticGrouping_CandidateExporter($config))->export(force: true), false, 'Disabled pipeline unexpectedly exported candidates');
+	$configuration = FreshRSS_Context::userConf();
+	$extensions = $configuration->extensions;
+	$extensions[SEMANTIC_EXTENSION_NAME]['enabled'] = false;
+	$configuration->extensions = $extensions;
+	$configuration->save();
+	Minz_ExtensionManager::callHookVoid(Minz_HookType::FreshrssUserMaintenance);
 	$pipeline = semanticDatabase()->query('SELECT producer_lease_until, config_json FROM pipeline_config WHERE singleton=1')->fetch();
 	check(is_array($pipeline), 'Disabled pipeline revision was not published.');
 	$effective = json_decode((string)$pipeline['config_json'], true, flags: JSON_THROW_ON_ERROR);
 	same($effective['enabled'] ?? null, false, 'Published pipeline configuration is still enabled');
 	check((int)$pipeline['producer_lease_until'] <= time(), 'Disabling the pipeline left its producer lease active');
+	same(semanticLabels(), [], 'Disabling the pipeline retained extension-managed labels');
+	check(FreshRSS_Factory::createTagDao()->searchByName('Integration label') instanceof FreshRSS_Tag, 'Disabling the pipeline removed a personal label');
 }
 
 $action = $argv[1] ?? '';
@@ -652,11 +775,17 @@ try {
 		case 'setup':
 			setup();
 			break;
-		case 'verify-groups':
-			verifyGroups();
+		case 'verify-labels':
+			verifyLabels();
 			break;
-		case 'verify-page':
-			verifyPage();
+		case 'create-conflict':
+			createConflict();
+			break;
+		case 'verify-conflict':
+			verifyConflict();
+			break;
+		case 'resolve-conflict':
+			resolveConflict();
 			break;
 		case 'verify-exact-disabled':
 			verifyExactDisabled();

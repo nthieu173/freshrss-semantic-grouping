@@ -5,7 +5,8 @@
 `make check` is the local and pull-request baseline. It runs:
 
 - PHP contract tests for normalization, duplicate filtering, configuration,
-  query resolution, generation publication, page safety, and error handling;
+  query resolution, generation publication, native label reconciliation,
+  ownership conflicts, retirement, migration, and error handling;
 - PHP syntax checks over every extension PHP and PHTML file;
 - Python unit tests for configuration fingerprints, stale-vector discovery,
   float32 serialization, snapshot races, SemHash conversion, atomic publication,
@@ -32,11 +33,12 @@ The integration scenario verifies:
 - an export activates only a complete native-query result;
 - the worker sees only `/semantic-data`, embeds with the real bundled Model2Vec
   model, and groups through SemHash/USearch;
-- the authenticated Semantic Groups page renders published groups with the
-  FreshRSS feed sidebar, categories, and labels;
+- native semantic labels render in the authenticated FreshRSS **My labels**
+  sidebar and use the representative title;
 - an article source change replaces only its stale embedding;
-- a query edit retains old groups until an atomic replacement is ready;
-- the grouped page resolves current FreshRSS entries safely;
+- a query edit retains old labels until an atomic replacement is ready;
+- membership changes and group retirement update only extension-owned labels;
+- a personal-label name conflict is reported without commandeering the label;
 - disablement and lease expiry stop new worker processing;
 - worker/database failures leave FreshRSS healthy.
 
