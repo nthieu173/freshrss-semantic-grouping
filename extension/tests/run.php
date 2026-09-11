@@ -80,6 +80,18 @@ function check(bool $condition, string $message): void {
 check(SemanticGrouping_TextNormalizer::title("  HELLO\n world  ") === 'hello world', 'whitespace/lowercase normalization failed');
 check(SemanticGrouping_TextNormalizer::title(" \t\n ") === '', 'blank title must stay non-deduplicable');
 check(SemanticGrouping_TextNormalizer::title('A &amp; B') === 'a & b', 'HTML entity title normalization failed');
+if (class_exists('Transliterator')) {
+	check(
+		SemanticGrouping_TextNormalizer::title("Organizer behind \u{2018}moth\u{2019} demonstrations")
+			=== SemanticGrouping_TextNormalizer::title("Organizer behind 'moth' demonstrations"),
+		'typographic single-quote normalization failed',
+	);
+	check(
+		SemanticGrouping_TextNormalizer::title("Witness called it \u{201C}unexpected\u{201D}")
+			=== SemanticGrouping_TextNormalizer::title('Witness called it "unexpected"'),
+		'typographic double-quote normalization failed',
+	);
+}
 if (class_exists('Normalizer')) {
 	check(SemanticGrouping_TextNormalizer::title("CAFE\u{0301}") === 'café', 'Unicode NFC title normalization failed');
 }
@@ -107,6 +119,15 @@ $accepted = new FreshRSS_Entry('New title');
 check($filter->filter($accepted) === $accepted, 'new title was rejected');
 check($filter->filter(new FreshRSS_Entry('NEW TITLE')) === null, 'same-batch duplicate was accepted');
 check($filter->filter(new FreshRSS_Entry('   ')) instanceof FreshRSS_Entry, 'blank title was rejected');
+
+if (class_exists('Transliterator')) {
+	FreshRSS_Factory::$dao = new TestEntryDao([new FreshRSS_Entry("Organizer behind \u{2018}moth\u{2019} demonstrations")]);
+	$filter = new SemanticGrouping_ExactTitleFilter();
+	check(
+		$filter->filter(new FreshRSS_Entry("Organizer behind 'moth' demonstrations")) === null,
+		'typographic quote variant of an existing title was accepted',
+	);
+}
 
 $directory = sys_get_temp_dir() . '/semantic-php-' . bin2hex(random_bytes(6));
 mkdir($directory, 0770, true);

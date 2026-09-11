@@ -25,16 +25,18 @@ currently retained titles through FreshRSS's DAO and builds a normalized hash
 set. For each incoming entry it:
 
 1. HTML-decodes and Unicode-normalizes the title;
-2. lowercases it with Unicode support;
-3. trims and collapses whitespace;
-4. accepts blank normalized titles as non-deduplicable;
-5. rejects a title already in the set;
-6. adds each accepted title to the set before returning the entry.
+2. uses PHP Intl's ICU transliterator to canonicalize Unicode quotation marks;
+3. lowercases it with Unicode support;
+4. trims and collapses whitespace;
+5. accepts blank normalized titles as non-deduplicable;
+6. rejects a title already in the set;
+7. adds each accepted title to the set before returning the entry.
 
 The in-process update rejects duplicates in the same refresh batch as well as
 duplicates of stored entries. Punctuation and source names remain significant
-to avoid over-aggressive ingestion deletion. The filter temporarily mirrors and
-restores FreshRSS request search state where required by the 1.29.1 DAO.
+to avoid over-aggressive ingestion deletion, while visual variants of quotation
+marks compare equally. The filter temporarily mirrors and restores FreshRSS
+request search state where required by the 1.29.1 DAO.
 
 ## Candidate-source resolution
 

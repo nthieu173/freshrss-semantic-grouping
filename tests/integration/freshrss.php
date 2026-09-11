@@ -389,6 +389,16 @@ function setup(): void {
 		null,
 		'Same-refresh normalized-title duplicate was accepted',
 	);
+	$quoted = new FreshRSS_Entry($feedId, 'incoming-quoted', "Organizer behind \u{2018}moth\u{2019} demonstrations");
+	same(Minz_ExtensionManager::callHook(Minz_HookType::EntryBeforeAdd, $quoted), $quoted, 'Unique typographic-quote title was rejected');
+	same(
+		Minz_ExtensionManager::callHook(
+			Minz_HookType::EntryBeforeAdd,
+			new FreshRSS_Entry($feedId, 'incoming-quoted-duplicate', "Organizer behind 'moth' demonstrations"),
+		),
+		null,
+		'Typographic quote variant of a same-refresh title was accepted',
+	);
 
 	$sourceConfig = $config;
 	$source = SemanticGrouping_CandidateSource::resolve($sourceConfig, $now);

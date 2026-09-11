@@ -10,6 +10,19 @@ final class SemanticGrouping_TextNormalizer {
 				$value = $normalized;
 			}
 		}
+		if (class_exists('Transliterator')) {
+			// Restrict ICU's ASCII transform to Unicode quotation marks so
+			// visually equivalent punctuation compares equally without folding
+			// accents, non-Latin scripts, or other meaningful title characters.
+			static $quotationMarks = null;
+			$quotationMarks ??= Transliterator::create('[\p{Quotation_Mark}] Any-ASCII');
+			if ($quotationMarks instanceof Transliterator) {
+				$transliterated = $quotationMarks->transliterate($value);
+				if (is_string($transliterated)) {
+					$value = $transliterated;
+				}
+			}
+		}
 		$value = mb_strtolower($value, 'UTF-8');
 		$value = preg_replace('/[\p{Z}\s]+/u', ' ', trim($value));
 		return is_string($value) ? $value : '';
@@ -50,4 +63,3 @@ final class SemanticGrouping_TextNormalizer {
 		return [implode("\n", $parts), hash('sha256', $serialized)];
 	}
 }
-
