@@ -3,7 +3,7 @@
 ## Status and scope
 
 This document describes the architecture implemented by the paired FreshRSS
-extension and Python worker in this repository. The version 0.11.1 design targets
+extension and Python worker in this repository. The version 0.12.0 design targets
 FreshRSS 1.30.0, Python 3.14, `linux/arm64`, extension configuration schema 3,
 and semantic database schema 2.
 
