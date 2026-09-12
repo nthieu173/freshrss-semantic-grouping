@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 final class SemanticGrouping_SemanticDatabase {
 	public const PATH = '/semantic-data/semantic.sqlite';
-	public const SCHEMA_VERSION = 2;
+	public const SCHEMA_VERSION = 3;
 
 	public function __construct(public readonly string $path = self::PATH) {}
 
@@ -57,17 +57,24 @@ final class SemanticGrouping_SemanticDatabase {
 		if ($current === self::SCHEMA_VERSION) {
 			return;
 		}
-		if (!in_array($current, [0, 1], true)) {
+		if (!in_array($current, [0, 1, 2], true)) {
 			throw new RuntimeException('No migration path exists for this semantic database.');
 		}
 		$pdo->beginTransaction();
 		try {
-			$statements = $current === 0 ? self::schemaStatements() : self::labelSchemaStatements();
+			$statements = $current === 0 ? self::schemaStatements() : [];
+			if ($current === 1) {
+				$statements = array_merge($statements, self::labelSchemaStatements());
+			}
+			if ($current === 1 || $current === 2) {
+				$statements[] = "ALTER TABLE candidate_members ADD COLUMN normalized_title TEXT NOT NULL DEFAULT ''";
+			}
 			foreach ($statements as $sql) {
 				$pdo->exec($sql);
 			}
-			if ($current === 1) {
-				$pdo->exec('UPDATE pipeline_config SET database_schema_version = ' . self::SCHEMA_VERSION);
+			if ($current > 0) {
+				$pdo->exec('UPDATE pipeline_config SET database_schema_version = ' . self::SCHEMA_VERSION . ', producer_lease_until = 0');
+				$pdo->exec("DELETE FROM export_state WHERE key = 'last_export_success'");
 			}
 			$pdo->exec('PRAGMA user_version = ' . self::SCHEMA_VERSION);
 			$pdo->commit();
@@ -112,6 +119,7 @@ final class SemanticGrouping_SemanticDatabase {
 				generation INTEGER NOT NULL,
 				entry_id TEXT NOT NULL,
 				source_hash TEXT NOT NULL,
+				normalized_title TEXT NOT NULL DEFAULT \'\',
 				PRIMARY KEY (generation, entry_id),
 				FOREIGN KEY (generation) REFERENCES candidate_generations(generation) ON DELETE CASCADE,
 				FOREIGN KEY (entry_id, source_hash) REFERENCES article_inputs(entry_id, source_hash)
@@ -187,14 +195,14 @@ final class SemanticGrouping_SemanticDatabase {
 		});
 	}
 
-	/** @param list<array{entry_id:string,feed_id:string,received_at:int,embedding_text:string,source_hash:string,exported_at:int}> $rows */
+	/** @param list<array{entry_id:string,feed_id:string,received_at:int,embedding_text:string,source_hash:string,normalized_title:string,exported_at:int}> $rows */
 	public function writeCandidateBatch(PDO $pdo, int $generation, array $rows): void {
 		self::transaction($pdo, static function (PDO $db) use ($generation, $rows): void {
 			$input = $db->prepare('INSERT OR IGNORE INTO article_inputs(entry_id, feed_id, received_at, embedding_text, source_hash, exported_at) VALUES (?, ?, ?, ?, ?, ?)');
-			$member = $db->prepare('INSERT INTO candidate_members(generation, entry_id, source_hash) VALUES (?, ?, ?)');
+			$member = $db->prepare('INSERT INTO candidate_members(generation, entry_id, source_hash, normalized_title) VALUES (?, ?, ?, ?)');
 			foreach ($rows as $row) {
 				$input->execute([$row['entry_id'], $row['feed_id'], $row['received_at'], $row['embedding_text'], $row['source_hash'], $row['exported_at']]);
-				$member->execute([$generation, $row['entry_id'], $row['source_hash']]);
+				$member->execute([$generation, $row['entry_id'], $row['source_hash'], $row['normalized_title']]);
 			}
 		});
 	}

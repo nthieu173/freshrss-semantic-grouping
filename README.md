@@ -8,7 +8,7 @@ labels. The worker sees only the
 shared semantic database; it never mounts or queries FreshRSS application data.
 
 The first release targets FreshRSS **1.30.0**, Python **3.14**, and
-`linux/arm64`. The shared database schema version is **2** and the extension
+`linux/arm64`. The shared database schema version is **3** and the extension
 configuration schema version is **3**.
 
 ## Data flow
@@ -25,9 +25,10 @@ FreshRSS entries + saved query
  FreshRSS My labels  Model2Vec -> SemHash/USearch
 ```
 
-Only exact-title duplicates are rejected during ingestion. Semantic grouping
-adds and removes extension-owned native label assignments; it does not mark or
-delete FreshRSS entries and never changes personal labels.
+Only exact-title duplicates are rejected during ingestion. Within each potential
+semantic group, only the earliest article for a normalized title is retained.
+Semantic grouping adds and removes extension-owned native label assignments; it
+does not mark or delete FreshRSS entries and never changes personal labels.
 
 ## Repository contents
 
@@ -81,10 +82,10 @@ Component and operational details are split across the linked documents under
 
 ## Privacy and recovery
 
-`semantic.sqlite` contains bounded, normalized title/content-derived text when
-those fields are enabled. Protect it like FreshRSS data. It is reproducible and
-may be excluded from backups, but it must not be deleted or replaced while
-either process is using it. Full reset is extension-owned; worker `rebuild`
-deletes only worker-owned derived rows.
+`semantic.sqlite` contains normalized titles and bounded, normalized
+title/content-derived text when those fields are enabled. Protect it like
+FreshRSS data. It is reproducible and may be excluded from backups, but it must
+not be deleted or replaced while either process is using it. Full reset is
+extension-owned; worker `rebuild` deletes only worker-owned derived rows.
 
 Released under the GNU General Public License v3.0.

@@ -5,6 +5,7 @@ final class SemanticGrouping_Config {
 	public const SCHEMA_VERSION = 3;
 	public const NORMALIZATION_VERSION = 1;
 	public const MINIMUM_GROUP_SIZE = 2;
+	public const GROUPING_FORMAT_VERSION = 2;
 
 	/** @return array<string,mixed> */
 	public static function defaults(): array {
@@ -163,6 +164,7 @@ final class SemanticGrouping_Config {
 	public static function groupingFingerprint(array $config): string {
 		return self::fingerprint([
 			'embedding_fingerprint' => self::embeddingFingerprint($config),
+			'grouping_format_version' => self::GROUPING_FORMAT_VERSION,
 			'minimum_group_size' => self::MINIMUM_GROUP_SIZE,
 			'query_fingerprint' => (string)$config['query_fingerprint'],
 			'similarity_threshold' => (float)$config['similarity_threshold'],

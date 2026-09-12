@@ -21,9 +21,9 @@ class Result:
 
 def test_result_conversion_uses_earliest_member_and_fixed_minimum_size() -> None:
     inputs = [
-        GroupingInput("late", 20, np.array([0.9, 0.1], dtype=np.float32)),
-        GroupingInput("early", 10, np.array([1.0, 0.0], dtype=np.float32)),
-        GroupingInput("alone", 5, np.array([0.0, 1.0], dtype=np.float32)),
+        GroupingInput("late", 20, "late", np.array([0.9, 0.1], dtype=np.float32)),
+        GroupingInput("early", 10, "early", np.array([1.0, 0.0], dtype=np.float32)),
+        GroupingInput("alone", 5, "alone", np.array([0.0, 1.0], dtype=np.float32)),
     ]
     result = Result([Duplicate({"entry_id": "late"}, [({"entry_id": "early"}, 0.99)])])
     groups = groups_from_result(result, inputs)
@@ -34,13 +34,47 @@ def test_result_conversion_uses_earliest_member_and_fixed_minimum_size() -> None
 
 def test_singleton_components_are_not_published_as_groups() -> None:
     inputs = [
-        GroupingInput("first", 10, np.array([1.0, 0.0], dtype=np.float32)),
-        GroupingInput("second", 20, np.array([0.0, 1.0], dtype=np.float32)),
+        GroupingInput("first", 10, "first", np.array([1.0, 0.0], dtype=np.float32)),
+        GroupingInput("second", 20, "second", np.array([0.0, 1.0], dtype=np.float32)),
     ]
 
     groups = groups_from_result(Result([]), inputs)
 
     assert groups == []
+
+
+def test_later_members_with_a_title_already_in_the_group_are_excluded() -> None:
+    inputs = [
+        GroupingInput("duplicate", 20, "same title", np.array([0.9, 0.1], dtype=np.float32)),
+        GroupingInput("original", 10, "same title", np.array([1.0, 0.0], dtype=np.float32)),
+        GroupingInput("distinct", 30, "distinct", np.array([0.8, 0.2], dtype=np.float32)),
+    ]
+    result = Result(
+        [
+            Duplicate(
+                {"entry_id": "duplicate"},
+                [({"entry_id": "original"}, 0.99), ({"entry_id": "distinct"}, 0.98)],
+            )
+        ]
+    )
+
+    groups = groups_from_result(result, inputs)
+
+    assert len(groups) == 1
+    assert groups[0].representative_entry_id == "original"
+    assert list(groups[0].members) == ["original", "distinct"]
+
+
+def test_title_deduplication_can_reduce_a_potential_group_to_a_singleton() -> None:
+    inputs = [
+        GroupingInput("original", 10, "same title", np.array([1.0, 0.0], dtype=np.float32)),
+        GroupingInput("duplicate", 20, "same title", np.array([0.9, 0.1], dtype=np.float32)),
+    ]
+    result = Result(
+        [Duplicate({"entry_id": "duplicate"}, [({"entry_id": "original"}, 0.99)])]
+    )
+
+    assert groups_from_result(result, inputs) == []
 
 
 def test_group_phase_publishes_only_after_all_embeddings_exist(populate) -> None:

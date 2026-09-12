@@ -3,9 +3,9 @@
 ## Status and scope
 
 This document describes the architecture implemented by the paired FreshRSS
-extension and Python worker in this repository. The version 0.12.0 design targets
+extension and Python worker in this repository. The version 0.13.0 design targets
 FreshRSS 1.30.0, Python 3.14, `linux/arm64`, extension configuration schema 3,
-and semantic database schema 2.
+and semantic database schema 3.
 
 The extension owns user interaction, FreshRSS integration, candidate selection,
 and candidate publication. The worker owns embeddings and semantic groups. The
@@ -20,6 +20,7 @@ The initial scope is one configured FreshRSS user and includes:
 - title and optional truncated-content embedding input;
 - cached Model2Vec float32 embeddings;
 - SemHash grouping through its USearch backend;
+- normalized-title deduplication within potential semantic groups;
 - native FreshRSS labels for semantic groups and single articles;
 - extension-owned full reset and worker-owned derived-data rebuild;
 - separate embedding and grouping processes under a 400 MiB worker limit.
@@ -109,8 +110,8 @@ For each export, the extension:
 2. validates configuration and resolves the candidate source;
 3. creates an incomplete candidate generation;
 4. lazily enumerates the bounded native query;
-5. writes immutable `(entry_id, source_hash)` inputs and generation membership
-   in batches of 200;
+5. writes immutable `(entry_id, source_hash)` inputs and generation membership,
+   including normalized titles, in batches of 200;
 6. completes and activates the generation, effective configuration, revision,
    and lease in one short transaction;
 7. prunes inputs not needed by the active or last worker-published generation.
@@ -127,15 +128,16 @@ previous complete publication or the new complete publication.
 ## Canonical inputs and invalidation
 
 The extension HTML-decodes, strips markup, normalizes Unicode and whitespace,
-and truncates on a character boundary. It stores only the configured canonical
-`embedding_text`, not another full article copy. SHA-256 covers a versioned,
-length-delimited serialization of the selected fields.
+and truncates on a character boundary. It stores the normalized title used for
+within-group deduplication plus the configured canonical `embedding_text`, not
+another full article copy. SHA-256 covers a versioned, length-delimited
+serialization of the selected embedding fields.
 
 An embedding is current only when both its source hash and embedding fingerprint
 match. The embedding fingerprint covers the model, selected fields, content
 limit, normalization/input format versions, and explicit rebuild token. The
 grouping fingerprint additionally covers the query fingerprint, rolling window,
-threshold, and the fixed minimum group size of two.
+threshold, grouping format, and the fixed minimum group size of two.
 
 This split avoids recomputing vectors for grouping-only changes while ensuring
 that every text or model change invalidates the appropriate cache. Old vectors
@@ -186,11 +188,13 @@ same writer; cross-owner references are checked in application logic and tests.
 
 ## Identity and presentation
 
-SemHash duplicate relationships are converted to connected components. Only
-components with at least two articles are published. The earliest
-`(received_at, entry_id)` member is the representative, and the group ID is a
-versioned SHA-256-derived value based on that representative. Per-member
-similarity is not calculated or published.
+SemHash duplicate relationships are converted to connected components. Members
+are ordered by `(received_at, entry_id)`, then later members whose non-blank
+normalized title is already present in the component are excluded. Only the
+resulting components with at least two articles are published. The earliest
+remaining member is the representative, and the group ID is a versioned
+SHA-256-derived value based on that representative. Per-member similarity is not
+calculated or published.
 
 After complete worker publication, FreshRSS maintenance resolves representative
 titles through FreshRSS and reconciles each component into an extension-owned

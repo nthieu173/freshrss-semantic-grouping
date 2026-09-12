@@ -17,9 +17,10 @@ fingerprint into `pipeline_config`; the worker does not read FreshRSS files.
 | Embedding batch | 128 | May be raised to 256 after measuring memory. |
 | Exact-title filter | yes | Rejects a normalized exact title before insertion. |
 
-The semantic group minimum is fixed at two and is not configurable. Candidates
-outside every publishable multi-article component are reconciled into the fixed
-**Single articles** native label.
+The semantic group minimum is fixed at two and is not configurable. After a
+potential group is formed, later articles with a normalized title already in
+that group are excluded. Candidates outside every publishable multi-article
+component are reconciled into the fixed **Single articles** native label.
 
 The pipeline switch controls candidate export and worker processing. The
 exact-title filter remains independently controlled by its own setting while
@@ -43,9 +44,10 @@ forces a new export even inside the normal export interval.
 
 Model, input fields, content limit, normalization version, and the explicit
 rebuild token form the embedding fingerprint. Threshold, window, the fixed
-minimum size of two, and query fingerprint additionally form the grouping
-fingerprint. Old native labels remain in place until a replacement publication
-is complete and a FreshRSS maintenance pass reconciles it.
+minimum size of two, grouping format version, and query fingerprint additionally
+form the grouping fingerprint. Old native labels remain in place until a
+replacement publication is complete and a FreshRSS maintenance pass reconciles
+it.
 
 Every complete export renews the producer lease to three export intervals with
 a 90-minute minimum. The worker performs no embedding or grouping after the

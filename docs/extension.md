@@ -68,8 +68,9 @@ whitespace are normalized, and content is bounded on a character boundary. The
 source hash uses SHA-256 over a versioned, length-delimited encoding of the
 selected fields, avoiding ambiguous concatenation.
 
-Only canonical embedding input is copied. Feed HTML, the complete article body,
-and other FreshRSS fields remain in FreshRSS.
+Only canonical embedding input and the normalized title used for within-group
+deduplication are copied. Feed HTML, the complete article body, and other
+FreshRSS fields remain in FreshRSS.
 
 ## Candidate reconciliation
 

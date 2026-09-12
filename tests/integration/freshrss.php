@@ -92,6 +92,17 @@ function candidateHashes(PDO $database, int $generation): array {
 	return $result;
 }
 
+/** @return array<string,string> */
+function candidateTitles(PDO $database, int $generation): array {
+	$statement = $database->prepare('SELECT entry_id, normalized_title FROM candidate_members WHERE generation=? ORDER BY entry_id');
+	$statement->execute([$generation]);
+	$result = [];
+	foreach ($statement as $row) {
+		$result[(string)$row['entry_id']] = (string)$row['normalized_title'];
+	}
+	return $result;
+}
+
 /** @return array<string,array{id:int,name:string,attributes:array<string,mixed>}> */
 function semanticLabels(): array {
 	$result = [];
@@ -485,6 +496,10 @@ function setup(): void {
 	check(is_array($pipeline), 'Pipeline configuration was not published.');
 	$generation = (int)$pipeline['active_generation'];
 	same((int)$database->query('SELECT candidate_count FROM candidate_generations WHERE generation=' . $generation)->fetchColumn(), 2, 'Wrong active candidate count');
+	same(candidateTitles($database, $generation), [
+		$ids['first'] => 'semantic city council approves climate plan',
+		$ids['second'] => 'semantic climate plan approved by city council',
+	], 'Candidate export did not preserve normalized titles');
 	check((int)$pipeline['producer_lease_until'] >= $now + 90 * 60, 'Producer lease was not renewed to the minimum duration.');
 
 	$activeBeforeFailure = $generation;

@@ -249,7 +249,7 @@ mkdir($directory, 0770, true);
 $path = $directory . '/semantic.sqlite';
 $database = new SemanticGrouping_SemanticDatabase($path);
 $pdo = $database->open(true);
-check((int)$pdo->query('PRAGMA user_version')->fetchColumn() === 2, 'database migration version failed');
+check((int)$pdo->query('PRAGMA user_version')->fetchColumn() === 3, 'database migration version failed');
 try {
 	SemanticGrouping_SemanticDatabase::transaction($pdo, static function (PDO $db): void {
 		$db->exec("INSERT INTO export_state(key, value) VALUES ('rollback-test', 'value')");
@@ -263,26 +263,27 @@ check($pdo->query("SELECT COUNT(*) FROM export_state WHERE key = 'rollback-test'
 $generation = $database->allocateGeneration($pdo, 'query', 100);
 $database->writeCandidateBatch($pdo, $generation, [[
 	'entry_id' => '100000000', 'feed_id' => '1', 'received_at' => 100,
-	'embedding_text' => 'hello', 'source_hash' => 'source-a', 'exported_at' => 100,
+	'embedding_text' => 'hello', 'source_hash' => 'source-a', 'normalized_title' => 'hello', 'exported_at' => 100,
 ], [
 	'entry_id' => '200000000', 'feed_id' => '1', 'received_at' => 300,
-	'embedding_text' => 'newest', 'source_hash' => 'source-b', 'exported_at' => 300,
+	'embedding_text' => 'newest', 'source_hash' => 'source-b', 'normalized_title' => 'newest', 'exported_at' => 300,
 ], [
 	'entry_id' => '300000000', 'feed_id' => '1', 'received_at' => 200,
-	'embedding_text' => 'middle', 'source_hash' => 'source-c', 'exported_at' => 200,
+	'embedding_text' => 'middle', 'source_hash' => 'source-c', 'normalized_title' => 'middle', 'exported_at' => 200,
 ], [
 	'entry_id' => '400000000', 'feed_id' => '1', 'received_at' => 400,
-	'embedding_text' => 'similar', 'source_hash' => 'source-d', 'exported_at' => 400,
+	'embedding_text' => 'similar', 'source_hash' => 'source-d', 'normalized_title' => 'similar', 'exported_at' => 400,
 ], [
 	'entry_id' => '500000000', 'feed_id' => '1', 'received_at' => 500,
-	'embedding_text' => 'unknown', 'source_hash' => 'source-e', 'exported_at' => 500,
+	'embedding_text' => 'unknown', 'source_hash' => 'source-e', 'normalized_title' => 'unknown', 'exported_at' => 500,
 ]]);
+check($pdo->query("SELECT normalized_title FROM candidate_members WHERE entry_id='100000000'")->fetchColumn() === 'hello', 'normalized candidate title was not persisted');
 check($pdo->query('SELECT COUNT(*) FROM pipeline_config')->fetchColumn() == 0, 'incomplete generation became active');
 $config = SemanticGrouping_Config::effectiveWorkerConfig(SemanticGrouping_Config::merge([
 	'candidate_source' => ['mode' => 'all_entries', 'query_id' => null, 'query_name' => 'All entries'],
 ]), 'query-v1');
 check(SemanticGrouping_Config::embeddingFingerprint($config) === '735c7ecc39088db6c69eff6eecb21a27d5d78d31652f6b745d4c715eaf8dcfdf', 'PHP/Python embedding fingerprint contract changed');
-check(SemanticGrouping_Config::groupingFingerprint($config) === 'e6d4cc696bdc21c3fc389f4a15ba7ccdc50d53d24c0ae8eb7bd79eae718171bf', 'PHP/Python grouping fingerprint contract changed');
+check(SemanticGrouping_Config::groupingFingerprint($config) === 'ead21a46c9b0161a3ecc806982bb2c5488ab79ebf60ff8051ad0e486d6368d99', 'PHP/Python grouping fingerprint contract changed');
 $invalidThreshold = $config;
 $invalidThreshold['similarity_threshold'] = NAN;
 check(SemanticGrouping_Config::validate($invalidThreshold) !== [], 'non-numeric similarity threshold was accepted');
@@ -433,7 +434,7 @@ $reconciler->removeManagedLabels();
 $migratedSchema = $pdo->query("SELECT type, name, sql FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' ORDER BY type, name")->fetchAll(PDO::FETCH_ASSOC);
 $fixturePath = $directory . '/fixture.sqlite';
 $fixture = new PDO('sqlite:' . $fixturePath, null, null, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
-$fixtureSql = file_get_contents(__DIR__ . '/../../fixtures/semantic-schema-v2.sql');
+$fixtureSql = file_get_contents(__DIR__ . '/../../fixtures/semantic-schema-v3.sql');
 check(is_string($fixtureSql), 'schema fixture is missing');
 $fixture->exec($fixtureSql);
 $fixtureSchema = $fixture->query("SELECT type, name, sql FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' ORDER BY type, name")->fetchAll(PDO::FETCH_ASSOC);
@@ -453,26 +454,44 @@ $legacyFixture->exec("INSERT INTO pipeline_config VALUES (1, 1, 'legacy', 0, 0, 
 unset($legacyFixture);
 $legacyDatabase = new SemanticGrouping_SemanticDatabase($legacyFixturePath);
 $legacyPdo = $legacyDatabase->open(true);
-check((int)$legacyPdo->query('PRAGMA user_version')->fetchColumn() === 2, 'version-one database was not migrated additively');
-check((int)$legacyPdo->query('SELECT database_schema_version FROM pipeline_config')->fetchColumn() === 2, 'migrated pipeline row retained the old database schema version');
+check((int)$legacyPdo->query('PRAGMA user_version')->fetchColumn() === 3, 'version-one database was not migrated additively');
+check((int)$legacyPdo->query('SELECT database_schema_version FROM pipeline_config')->fetchColumn() === 3, 'migrated pipeline row retained the old database schema version');
 $legacySchema = $legacyPdo->query("SELECT type, name, sql FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' ORDER BY type, name")->fetchAll(PDO::FETCH_ASSOC);
 check($normalizeSchema($legacySchema) === $normalizeSchema($migratedSchema), 'additive migration and fresh schema differ');
+$versionTwoFixturePath = $directory . '/version-two-fixture.sqlite';
+$versionTwoFixture = new PDO('sqlite:' . $versionTwoFixturePath, null, null, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+$versionTwoFixtureSql = file_get_contents(__DIR__ . '/../../fixtures/semantic-schema-v2.sql');
+check(is_string($versionTwoFixtureSql), 'version-two schema fixture is missing');
+$versionTwoFixture->exec($versionTwoFixtureSql);
+$versionTwoFixture->exec("INSERT INTO pipeline_config VALUES (1, 2, 'legacy', 0, 100, '{}', 0)");
+$versionTwoFixture->exec("INSERT INTO export_state VALUES ('last_export_success', '100')");
+unset($versionTwoFixture);
+$versionTwoDatabase = new SemanticGrouping_SemanticDatabase($versionTwoFixturePath);
+$versionTwoPdo = $versionTwoDatabase->open(true);
+check((int)$versionTwoPdo->query('PRAGMA user_version')->fetchColumn() === 3, 'version-two database was not migrated additively');
+check((int)$versionTwoPdo->query('SELECT database_schema_version FROM pipeline_config')->fetchColumn() === 3, 'version-two pipeline row retained the old database schema version');
+check((int)$versionTwoPdo->query('SELECT producer_lease_until FROM pipeline_config')->fetchColumn() === 0, 'schema migration did not expire the producer lease');
+check($versionTwoPdo->query("SELECT COUNT(*) FROM export_state WHERE key='last_export_success'")->fetchColumn() == 0, 'schema migration did not make candidate export immediately due');
+$versionTwoSchema = $versionTwoPdo->query("SELECT type, name, sql FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' ORDER BY type, name")->fetchAll(PDO::FETCH_ASSOC);
+check($normalizeSchema($versionTwoSchema) === $normalizeSchema($migratedSchema), 'version-two migration and fresh schema differ');
 $pdo->exec('PRAGMA user_version = 99');
 unset($pdo);
 $database->fullReset();
 $pdo = $database->open(false);
-check((int)$pdo->query('PRAGMA user_version')->fetchColumn() === 2, 'full reset did not recover an incompatible schema version');
+check((int)$pdo->query('PRAGMA user_version')->fetchColumn() === 3, 'full reset did not recover an incompatible schema version');
 check((int)$pdo->query('SELECT COUNT(*) FROM pipeline_config')->fetchColumn() === 0, 'full reset retained pipeline rows');
 
 unset($pdo);
 unset($fixture);
 unset($legacyPdo);
+unset($versionTwoPdo);
 @unlink($path);
 @unlink($path . '-journal');
 @unlink($directory . '/.semantic-worker.lock');
 @unlink($directory . '/.semantic-label-' . substr(hash('sha256', 'test-user'), 0, 16) . '.lock');
 @unlink($fixturePath);
 @unlink($legacyFixturePath);
+@unlink($versionTwoFixturePath);
 @rmdir($directory);
 
 echo "extension tests passed\n";

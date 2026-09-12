@@ -28,7 +28,7 @@ invokes it every 10 minutes with a stable, randomized per-host offset of up to
 ## Configuration snapshot
 
 The worker reads only `pipeline_config` from the fixed semantic database. It
-validates database schema 2 and the published configuration, then snapshots the
+validates database schema 3 and the published configuration, then snapshots the
 active generation and configuration revision. It rechecks both inside each
 write transaction that could affect a visible result.
 
@@ -57,9 +57,9 @@ source hash, and the next active-generation join marks it stale.
 
 ## Grouping phase
 
-Grouping loads only active entry IDs, received times, and current vectors. It
-requires a current vector for every candidate; missing or invalid input defers
-publication and retains the old groups.
+Grouping loads only active entry IDs, received times, normalized titles, and
+current vectors. It requires a current vector for every candidate; missing or
+invalid input defers publication and retains the old groups.
 
 The worker passes a float32 matrix and minimal ID records to
 `SemHash.from_embeddings` with the USearch backend. Its protocol adapter raises
@@ -67,11 +67,12 @@ if SemHash unexpectedly attempts text encoding, guaranteeing that the Model2Vec
 model is not resident during grouping.
 
 SemHash duplicate edges are combined with union-find into connected components.
-Components smaller than two articles are always dropped. The earliest
-`(received_at, entry_id)` is the representative and its versioned
-SHA-256-derived ID names the group. Publication stores only group identity,
-representative identity, and membership; it does not calculate member cosine
-similarities.
+After ordering members by `(received_at, entry_id)`, the worker excludes each
+later member whose non-blank normalized title already occurs in that potential
+group. Components smaller than two articles after this check are dropped. The
+earliest remaining member is the representative and its versioned SHA-256-derived
+ID names the group. Publication stores only group identity, representative
+identity, and membership; it does not calculate member cosine similarities.
 
 All groups are computed before a write transaction starts. Publication rechecks
 the generation and revision, atomically replaces group and membership tables,

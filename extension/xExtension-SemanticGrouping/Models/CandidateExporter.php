@@ -109,8 +109,9 @@ final class SemanticGrouping_CandidateExporter {
 			$count = 0;
 			$batch = [];
 			foreach ($source->entries() as $entry) {
+				$title = $entry->title();
 				[$embeddingText, $sourceHash] = SemanticGrouping_TextNormalizer::embeddingInput(
-					$entry->title(),
+					$title,
 					$entry->content(false),
 					$this->config,
 				);
@@ -120,6 +121,7 @@ final class SemanticGrouping_CandidateExporter {
 					'received_at' => self::receivedAt($entry),
 					'embedding_text' => $embeddingText,
 					'source_hash' => $sourceHash,
+					'normalized_title' => SemanticGrouping_TextNormalizer::title($title),
 					'exported_at' => $now,
 				];
 				$count++;

@@ -39,5 +39,5 @@ def test_default_fingerprints_match_the_php_producer_contract() -> None:
         "735c7ecc39088db6c69eff6eecb21a27d5d78d31652f6b745d4c715eaf8dcfdf"
     )
     assert config.grouping_fingerprint == (
-        "e6d4cc696bdc21c3fc389f4a15ba7ccdc50d53d24c0ae8eb7bd79eae718171bf"
+        "ead21a46c9b0161a3ecc806982bb2c5488ab79ebf60ff8051ad0e486d6368d99"
     )

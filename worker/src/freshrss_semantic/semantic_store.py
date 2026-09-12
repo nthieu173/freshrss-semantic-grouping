@@ -16,7 +16,7 @@ from numpy.typing import NDArray
 
 from .config import ConfigurationError, PipelineSnapshot, WorkerConfig
 
-DATABASE_SCHEMA_VERSION = 2
+DATABASE_SCHEMA_VERSION = 3
 
 
 class StoreError(RuntimeError):
@@ -46,6 +46,7 @@ class PendingInput:
 class GroupingInput:
     entry_id: str
     received_at: int
+    normalized_title: str
     embedding: NDArray[np.float32]
 
 
@@ -311,7 +312,8 @@ class SemanticStore:
         )
         rows = connection.execute(
             """
-            SELECT cm.entry_id, ai.received_at, e.dimensions, e.embedding
+            SELECT cm.entry_id, ai.received_at, cm.normalized_title,
+                   e.dimensions, e.embedding
               FROM candidate_members AS cm
               JOIN article_inputs AS ai
                 ON ai.entry_id = cm.entry_id AND ai.source_hash = cm.source_hash
@@ -331,8 +333,8 @@ class SemanticStore:
         dimensions: int | None = None
         output: list[GroupingInput] = []
         for row in rows:
-            row_dimensions = int(row[2])
-            blob = bytes(row[3])
+            row_dimensions = int(row[3])
+            blob = bytes(row[4])
             if row_dimensions < 1 or len(blob) != row_dimensions * 4:
                 raise StoreError(f"invalid embedding BLOB for entry {row[0]}")
             if dimensions is None:
@@ -342,7 +344,7 @@ class SemanticStore:
             vector = np.frombuffer(blob, dtype="<f4").copy()
             if not np.isfinite(vector).all():
                 raise StoreError(f"non-finite embedding for entry {row[0]}")
-            output.append(GroupingInput(str(row[0]), int(row[1]), vector))
+            output.append(GroupingInput(str(row[0]), int(row[1]), str(row[2]), vector))
         return output
 
     def publish_groups(

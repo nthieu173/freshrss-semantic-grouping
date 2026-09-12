@@ -60,6 +60,10 @@ def test_grouping_refuses_partial_or_malformed_vectors(populate) -> None:
     with store.connection() as db:
         pending = store.pending_inputs(db, snapshot, 2)
     store.store_embeddings(snapshot, pending, np.ones((2, 2), dtype=np.float32))
+    with store.connection() as db:
+        inputs = store.load_grouping_inputs(db, snapshot)
+    assert [item.normalized_title for item in inputs] == ["entry 0", "entry 1"]
+
     with sqlite3.connect(store.database) as db:
         db.execute(
             "UPDATE embeddings SET embedding=x'0000' WHERE entry_id=?",

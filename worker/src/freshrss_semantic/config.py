@@ -13,6 +13,7 @@ class ConfigurationError(ValueError):
 
 
 MINIMUM_GROUP_SIZE = 2
+GROUPING_FORMAT_VERSION = 2
 
 
 def canonical_json(value: Any) -> str:
@@ -118,6 +119,7 @@ class WorkerConfig:
         return fingerprint(
             {
                 "embedding_fingerprint": self.embedding_fingerprint,
+                "grouping_format_version": GROUPING_FORMAT_VERSION,
                 "minimum_group_size": MINIMUM_GROUP_SIZE,
                 "query_fingerprint": self.query_fingerprint,
                 "similarity_threshold": self.similarity_threshold,

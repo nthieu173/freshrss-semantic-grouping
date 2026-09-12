@@ -2,7 +2,7 @@
 
 The fixed runtime path is `/semantic-data/semantic.sqlite`. No browser parameter
 can change it. The extension creates and migrates the database; the worker
-validates schema version 2 and refuses to migrate, rename, delete, or replace an
+validates schema version 3 and refuses to migrate, rename, delete, or replace an
 unknown database.
 
 All connections enable foreign keys, use rollback journaling, wait at most five
@@ -18,17 +18,21 @@ index construction happen outside write transactions.
 
 Foreign keys exist only within a single writer's table set. Cross-owner
 references are validated during loading and cleanup rather than by cascades.
-The complete DDL is checked in at `fixtures/semantic-schema-v2.sql`. The v1
-fixture is retained to verify the additive v1-to-v2 migration. Its nullable
+The complete DDL is checked in at `fixtures/semantic-schema-v3.sql`. The v1 and
+v2 fixtures are retained to verify additive migrations. The nullable
 `group_members.similarity` column remains for additive compatibility but new
-workers leave it null.
+workers leave it null. Schema v3 adds the normalized title to each generation's
+membership row; migrating expires the producer lease and clears the last-export
+timestamp so the worker waits for the next maintenance pass to republish
+candidate titles immediately.
 
 ## Generation publication
 
 The exporter inserts an incomplete `candidate_generations` row, streams
-immutable `(entry_id, source_hash)` inputs and memberships in batches, then
-marks the generation complete and switches `pipeline_config.active_generation`
-in one transaction. A failed batch never changes the active generation.
+immutable `(entry_id, source_hash)` inputs and memberships with normalized titles
+in batches, then marks the generation complete and switches
+`pipeline_config.active_generation` in one transaction. A failed batch never
+changes the active generation.
 
 The worker snapshots `(active_generation, config_revision)`. Embedding batch
 commits and group publication recheck both values inside their write

@@ -36,7 +36,7 @@ def worker_config(**overrides: object) -> dict[str, object]:
 @pytest.fixture
 def database(tmp_path: Path) -> Path:
     path = tmp_path / "semantic.sqlite"
-    schema = Path(__file__).parents[2] / "fixtures" / "semantic-schema-v2.sql"
+    schema = Path(__file__).parents[2] / "fixtures" / "semantic-schema-v3.sql"
     with sqlite3.connect(path) as db:
         db.executescript(schema.read_text())
     return path
@@ -60,11 +60,11 @@ def populate(database: Path) -> Callable[..., SemanticStore]:
                     (entry_id, "1", now + index, f"entry {index}", source_hash, now),
                 )
                 db.execute(
-                    "INSERT INTO candidate_members VALUES (1, ?, ?)",
-                    (entry_id, source_hash),
+                    "INSERT INTO candidate_members VALUES (1, ?, ?, ?)",
+                    (entry_id, source_hash, f"entry {index}"),
                 )
             db.execute(
-                "INSERT INTO pipeline_config VALUES (1, 2, 'revision-v1', 1, ?, ?, ?)",
+                "INSERT INTO pipeline_config VALUES (1, 3, 'revision-v1', 1, ?, ?, ?)",
                 (now + 7200, json.dumps(raw, sort_keys=True), now),
             )
         # Exercise config validation here so fixture failures remain obvious.
