@@ -10,7 +10,8 @@ permissions:
 
 jobs:
   extension:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-slim
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
       - uses: shivammathur/setup-php@v2
@@ -25,7 +26,8 @@ jobs:
         run: make test/compatibility
 
   worker:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-slim
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7

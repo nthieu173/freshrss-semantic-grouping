@@ -9,8 +9,9 @@ permissions:
   packages: write
 
 jobs:
-  release:
-    runs-on: ubuntu-24.04-arm
+  checks:
+    runs-on: ubuntu-slim
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
       - uses: shivammathur/setup-php@v2
@@ -27,6 +28,12 @@ jobs:
         env:
           TAG: ${{ github.ref_name }}
         run: make ci/check
+
+  release:
+    needs: checks
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v7
       - name: FreshRSS 1.30.0 and worker integration
         run: make test/integration
       - uses: docker/setup-buildx-action@v4

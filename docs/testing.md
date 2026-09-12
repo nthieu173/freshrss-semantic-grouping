@@ -71,7 +71,10 @@ Pull-request and main-branch checks have separate extension, worker, integration
 and ARM64 image jobs. The extension job checks compatibility against the pinned
 FreshRSS source. The image job uses QEMU/buildx to build `linux/arm64`, then runs
 a real offline embedding/grouping smoke test under the production filesystem and
-memory constraints.
+memory constraints. Host-only extension and worker checks use the lower-cost
+`ubuntu-slim` runner. Integration, image, and release publishing stay on full
+runners because they need a Docker daemon; release preflight checks run
+separately on `ubuntu-slim`.
 
 FreshRSS and its extension API are pinned because candidate export intentionally
 uses application model/DAO classes whose stability is not guaranteed across
