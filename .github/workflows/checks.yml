@@ -19,15 +19,10 @@ jobs:
           extensions: mbstring, intl, pdo_sqlite
         env:
           update: true
-      - name: PHP syntax
-        run: find extension -type f \( -name '*.php' -o -name '*.phtml' \) -print0 | xargs -0 -n1 php -l
-      - name: Extension contract tests
-        run: php extension/tests/run.php
+      - name: Extension checks
+        run: make test/php
       - name: FreshRSS 1.30.0 API compatibility
-        run: |
-          git clone --depth 1 --branch 1.30.0 https://github.com/FreshRSS/FreshRSS.git /tmp/FreshRSS
-          cp -a extension/xExtension-SemanticGrouping /tmp/FreshRSS/extensions/
-          php -l /tmp/FreshRSS/extensions/xExtension-SemanticGrouping/extension.php
+        run: make test/compatibility
 
   worker:
     runs-on: ubuntu-24.04
@@ -37,12 +32,8 @@ jobs:
         with:
           python-version: '3.14.7'
       - run: python -m pip install uv==0.12.10
-      - run: uv sync --project worker --locked --extra dev
-      - run: uv run --project worker pytest
-      - run: uv run --project worker ruff check worker/src worker/tests
-      - run: uv run --project worker mypy worker/src
-      - name: sqlite-vec is not installed
-        run: '! uv run --project worker python -c "import sqlite_vec"'
+      - name: Worker checks
+        run: make test/worker
 
   integration:
     runs-on: ubuntu-24.04
@@ -50,7 +41,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: FreshRSS 1.30.0 and worker integration
-        run: ./tests/integration/run.sh
+        run: make test/integration
 
   arm64-image:
     runs-on: ubuntu-24.04
@@ -70,43 +61,4 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
       - name: Smoke test under the memory and filesystem contract
-        run: |
-          mkdir .ci-semantic
-          chmod 0777 .ci-semantic
-          python3 - <<'PY'
-          import json, sqlite3, time
-          db = sqlite3.connect('.ci-semantic/semantic.sqlite')
-          db.executescript(open('fixtures/semantic-schema-v2.sql').read())
-          now = int(time.time())
-          config = {
-              'enabled': True, 'embedding_model': 'minishlab/potion-base-8M',
-              'similarity_threshold': .25, 'window_hours': 72,
-              'include_title': True, 'include_content': False,
-              'content_character_limit': 2000, 'embedding_batch_size': 128,
-              'normalization_version': 1, 'query_fingerprint': 'smoke',
-              'force_rebuild_token': ''}
-          db.execute('INSERT INTO candidate_generations VALUES (1,?,?,?,?)',
-                     ('smoke', now, now, 2))
-          inputs = [
-              ('1000001', '1', now - 2, 'Semantic city council approves climate plan', 'source-1', now),
-              ('1000002', '1', now - 1, 'Semantic climate plan approved by city council', 'source-2', now),
-          ]
-          db.executemany('INSERT INTO article_inputs VALUES (?,?,?,?,?,?)', inputs)
-          db.executemany('INSERT INTO candidate_members VALUES (?,?,?)',
-                         [(1, row[0], row[4]) for row in inputs])
-          db.execute('INSERT INTO pipeline_config VALUES (1,2,?,?,?,?,?)',
-                     ('smoke', 1, now + 5400, json.dumps(config), now))
-          db.commit()
-          db.close()
-          PY
-          chmod 0666 .ci-semantic/semantic.sqlite
-          docker run --rm --platform linux/arm64 --read-only --tmpfs /tmp:rw,size=32m \
-            --network none --memory 400m -v "$PWD/.ci-semantic:/semantic-data" \
-            freshrss-semantic-grouping:check run
-          python3 - <<'PY'
-          import sqlite3
-          db = sqlite3.connect('.ci-semantic/semantic.sqlite')
-          assert db.execute('SELECT COUNT(*) FROM embeddings').fetchone()[0] == 2
-          assert db.execute("SELECT value FROM worker_state WHERE key='last_published_generation'").fetchone()[0] == '1'
-          db.close()
-          PY
+        run: make test/smoke

@@ -65,16 +65,20 @@ their peak memory is not additive.
 ## Development
 
 ```sh
-make check
-make integration
-CONTAINER_RUNTIME=podman make integration
-podman build -f packaging/Containerfile -t freshrss-semantic:dev .
+make test/fast
+make test/compatibility
+make test/integration
+CONTAINER_RUNTIME=podman make test/integration
+podman build --platform linux/arm64 -f packaging/Containerfile -t freshrss-semantic:dev .
+CONTAINER_RUNTIME=podman WORKER_IMAGE=freshrss-semantic:dev make test/smoke
+# Runs every test/* target once the smoke image is available:
+CONTAINER_RUNTIME=podman WORKER_IMAGE=freshrss-semantic:dev make test
 ```
 
 The fast test suite uses deterministic embedding fakes and separately exercises
-SemHash's real precomputed-embedding USearch API. `make integration` requires a
-Docker-compatible runtime and tests the pinned FreshRSS container plus the
-offline, memory-limited worker image with the bundled model.
+SemHash's real precomputed-embedding USearch API. `make test/integration`
+requires a Docker-compatible runtime and tests the pinned FreshRSS container
+plus the offline, memory-limited worker image with the bundled model.
 
 See the [system design](design.md) for architectural decisions and invariants.
 Component and operational details are split across the linked documents under
