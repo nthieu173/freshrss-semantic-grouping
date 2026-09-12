@@ -1,0 +1,32 @@
+.semantic-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(min(15rem, 100%), 1fr));
+	gap: .5rem 1rem;
+}
+
+.semantic-status {
+	display: grid;
+	grid-template-columns: minmax(12rem, max-content) minmax(0, 1fr);
+	gap: .35rem 1rem;
+}
+
+.semantic-status dt {
+	font-weight: bold;
+}
+
+.semantic-status dd {
+	margin: 0;
+	min-width: 0;
+	overflow-wrap: anywhere;
+}
+
+@media (max-width: 700px) {
+	.semantic-status {
+		grid-template-columns: minmax(0, 1fr);
+		gap: .15rem;
+	}
+
+	.semantic-status dd {
+		margin-bottom: .65rem;
+	}
+}
