@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-freshrss_version=${FRESHRSS_VERSION:-1.30.0}
+freshrss_version=${FRESHRSS_VERSION:-1.30.4}
 freshrss_repository=${FRESHRSS_REPOSITORY:-https://github.com/FreshRSS/FreshRSS.git}
 script_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 repository_dir=$(CDPATH='' cd -- "$script_dir/../.." && pwd)

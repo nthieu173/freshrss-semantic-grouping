@@ -1,5 +1,9 @@
 # Deployment
 
+The worker build follows the latest Python 3.14 patch image and uv release.
+Application dependencies remain exact versions in `worker/pyproject.toml` and
+`worker/uv.lock`; the final worker image and extension are released together.
+
 ## Shared storage
 
 Create the host directory before starting either container:
@@ -71,7 +75,7 @@ lock. An absent database is logged at informational level as not configured.
 - Incomplete or failed worker publication leaves all prior native semantic
   labels in place.
 
-FreshRSS 1.30.0 invokes user maintenance before the current feed actualization.
+FreshRSS 1.30.4 invokes user maintenance before the current feed actualization.
 Newly fetched articles are therefore normally included on the following
 scheduled actualization; this one-cycle lag is intentional in the first
 release.

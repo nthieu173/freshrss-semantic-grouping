@@ -37,7 +37,7 @@ CONTAINER_RUNTIME=podman WORKER_IMAGE=freshrss-semantic:dev \
 
 ## Clean-room integration
 
-`make test/integration` creates a clean pinned FreshRSS 1.30.0 environment, installs
+`make test/integration` creates a clean pinned FreshRSS 1.30.4 environment, installs
 and enables the extension, initializes real FreshRSS SQLite data, and creates
 feeds, entries, a label, and saved queries. It exercises native feed, category,
 title, content, tag, label, unread/favourite, date, nested `OR`, and negation

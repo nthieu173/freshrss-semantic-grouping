@@ -1,4 +1,4 @@
-FRESHRSS_VERSION ?= 1.30.0
+FRESHRSS_VERSION ?= 1.30.4
 IMAGE_METADATA ?= image-metadata.json
 
 .PHONY: test test/all test/fast test/php test/worker test/compatibility test/smoke test/integration

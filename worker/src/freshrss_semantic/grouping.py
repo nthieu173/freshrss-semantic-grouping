@@ -21,12 +21,12 @@ LOGGER = logging.getLogger(__name__)
 class UnexpectedEncoder:
     """SemHash protocol adapter that proves precomputed vectors are used."""
 
-    def encode(self, _inputs: Sequence[Any] | Any, **_kwargs: Any) -> NDArray[np.float32]:
+    def encode(self, inputs: Sequence[Any] | Any, **kwargs: Any) -> NDArray[np.float32]:
         raise RuntimeError("SemHash unexpectedly requested text encoding")
 
 
 def _semhash(embeddings: NDArray[np.float32], records: list[dict[str, str]]) -> Any:
-    from semhash import SemHash  # type: ignore[import-untyped]
+    from semhash import SemHash
     from vicinity import Backend
 
     return SemHash.from_embeddings(

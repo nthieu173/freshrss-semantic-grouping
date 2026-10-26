@@ -22,7 +22,7 @@ jobs:
           update: true
       - name: Extension checks
         run: make test/php
-      - name: FreshRSS 1.30.0 API compatibility
+      - name: FreshRSS 1.30.4 API compatibility
         run: make test/compatibility
 
   worker:
@@ -32,8 +32,8 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
         with:
-          python-version: '3.14.7'
-      - run: python -m pip install uv==0.12.10
+          python-version: '3.14'
+      - run: python -m pip install uv
       - name: Worker checks
         run: make test/worker
 
@@ -42,7 +42,7 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
-      - name: FreshRSS 1.30.0 and worker integration
+      - name: FreshRSS 1.30.4 and worker integration
         run: make test/integration
 
   arm64-image:
