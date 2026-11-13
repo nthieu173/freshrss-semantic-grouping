@@ -10,10 +10,10 @@ if [ -z "$release_version" ]; then
 	exit 2
 fi
 case "$release_version" in
-	*[!0-9A-Za-z.-]*)
-		echo "Invalid release version: $release_version" >&2
-		exit 2
-		;;
+*[!0-9A-Za-z.-]*)
+	echo "Invalid release version: $release_version" >&2
+	exit 2
+	;;
 esac
 
 revision=${REVISION:-HEAD}
@@ -22,10 +22,10 @@ if [ -z "$source_date_epoch" ]; then
 	source_date_epoch=$(git -C "$repository_dir" show -s --format=%ct "$revision")
 fi
 case "$source_date_epoch" in
-	''|*[!0-9]*)
-		echo "Invalid source date epoch: $source_date_epoch" >&2
-		exit 2
-		;;
+'' | *[!0-9]*)
+	echo "Invalid source date epoch: $source_date_epoch" >&2
+	exit 2
+	;;
 esac
 
 output_dir=${OUTPUT_DIR:-$repository_dir}
@@ -38,7 +38,7 @@ tar --sort=name --mtime="@$source_date_epoch" --owner=0 --group=0 --numeric-owne
 	-C "$repository_dir/extension" xExtension-SemanticGrouping
 (
 	cd "$output_dir"
-	sha256sum "$artifact_name" > "$artifact_name.sha256"
+	sha256sum "$artifact_name" >"$artifact_name.sha256"
 )
 
 echo "Built $output_dir/$artifact_name"

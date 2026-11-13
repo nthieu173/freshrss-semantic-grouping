@@ -17,6 +17,8 @@ LABEL org.opencontainers.image.title="FreshRSS semantic grouping worker" \
       org.opencontainers.image.licenses="GPL-3.0" \
       io.freshrss.semantic.model.revision="${MODEL_REVISION}"
 
+# TOKENIZERS_PARALLELISM is a setting, not a secret.
+# hadolint ignore=DL3064
 ENV PATH="/app/worker/.venv/bin:${PATH}" \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \

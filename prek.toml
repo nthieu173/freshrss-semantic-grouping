@@ -1,0 +1,164 @@
+# prek configuration: https://prek.j178.dev
+#:schema https://www.schemastore.org/prek.json
+#
+# prek itself, codespell and rumdl come from pyproject.toml; ruff and mypy from
+# worker/pyproject.toml; php, shellcheck and shfmt from manifest.scm; hadolint
+# and betterleaks from the host image (load them with `direnv allow`). The
+# TOML, YAML and GitHub Actions checkers are hook repositories that prek
+# downloads and pins below. Fixers run one at a time (priorities 0-9); checks
+# then run concurrently. Run everything: make hooks/check
+
+minimum_prek_version = "0.5.10"
+
+[[repos]]
+repo = "builtin"
+hooks = [
+  # Fixers
+  { id = "fix-byte-order-marker", priority = 0 },
+  { id = "mixed-line-ending", args = ["--fix=lf"], priority = 1 },
+  { id = "trailing-whitespace", priority = 2 },
+  { id = "end-of-file-fixer", priority = 3 },
+  { id = "pretty-format-json", args = ["--autofix", "--no-sort-keys", "--indent=2"], priority = 4 },
+  # Checks
+  { id = "check-added-large-files", priority = 10 },
+  { id = "check-case-conflict", priority = 10 },
+  { id = "check-executables-have-shebangs", priority = 10 },
+  { id = "check-shebang-scripts-are-executable", priority = 10 },
+  { id = "check-merge-conflict", priority = 10 },
+  { id = "check-symlinks", priority = 10 },
+  { id = "check-json", priority = 10 },
+  { id = "check-toml", priority = 10 },
+  { id = "check-yaml", args = ["--disallow-unknown-tags"], priority = 10 },
+  { id = "detect-private-key", priority = 10 },
+  { id = "forbid-new-submodules", priority = 10 },
+]
+
+[[repos]]
+repo = "local"
+
+# Fixers
+
+# Ruff reads worker/pyproject.toml for files under worker/, and its defaults
+# elsewhere (scripts/ci).
+[[repos.hooks]]
+id = "ruff-check"
+name = "ruff check --fix"
+entry = "ruff check --fix --force-exclude"
+language = "system"
+types_or = ["python", "pyi"]
+require_serial = true
+priority = 5
+
+[[repos.hooks]]
+id = "ruff-format"
+name = "ruff format"
+entry = "ruff format --force-exclude"
+language = "system"
+types_or = ["python", "pyi"]
+require_serial = true
+priority = 6
+
+[[repos.hooks]]
+id = "shfmt"
+name = "shfmt"
+entry = "shfmt --simplify --write"
+language = "system"
+types = ["shell"]
+priority = 7
+
+# Checks
+
+[[repos.hooks]]
+id = "betterleaks"
+name = "betterleaks (secrets)"
+entry = "betterleaks git --pre-commit --redact --staged --verbose"
+language = "system"
+pass_filenames = false
+priority = 10
+
+# Strict mypy checks the whole worker package, so one run covers any change.
+[[repos.hooks]]
+id = "mypy"
+name = "mypy (worker, strict)"
+entry = "sh -c 'cd worker && exec mypy src'"
+language = "system"
+files = '^worker/(src/.*\.pyi?|pyproject\.toml|uv\.lock)$'
+pass_filenames = false
+priority = 10
+
+# CI's test/php lints the same files; the FreshRSS checkout in
+# tests/compatibility is not tracked.
+[[repos.hooks]]
+id = "php-lint"
+name = "php -l"
+entry = "php -l"
+language = "system"
+files = '\.(php|phtml)$'
+priority = 10
+
+[[repos.hooks]]
+id = "shellcheck"
+name = "shellcheck"
+entry = "shellcheck"
+language = "system"
+types = ["shell"]
+priority = 10
+
+[[repos.hooks]]
+id = "hadolint"
+name = "hadolint"
+entry = "hadolint"
+language = "system"
+files = "(^|/)Containerfile$"
+priority = 10
+
+[[repos.hooks]]
+id = "codespell"
+name = "codespell"
+entry = "codespell"
+language = "system"
+types = ["text"]
+exclude = '(^|/)(LICENSE|uv\.lock)$'
+priority = 10
+
+[[repos.hooks]]
+id = "rumdl"
+name = "rumdl"
+entry = "rumdl check"
+language = "system"
+types = ["markdown"]
+priority = 10
+
+[[repos]]
+repo = "https://github.com/tombi-toml/tombi-pre-commit"
+rev = "v1.9.8"
+# uv owns its lockfiles' formatting; reformatting them here only churns.
+hooks = [
+  { id = "tombi-format", args = ["--offline"], exclude = '(^|/)uv\.lock$', priority = 8 },
+]
+
+[[repos]]
+repo = "https://github.com/google/yamlfmt"
+rev = "v0.21.0"
+hooks = [{ id = "yamlfmt", priority = 9 }]
+
+[[repos]]
+repo = "https://github.com/rhysd/actionlint"
+rev = "v1.7.12"
+hooks = [{ id = "actionlint", priority = 10 }]
+
+[[repos]]
+repo = "https://github.com/zizmorcore/zizmor-pre-commit"
+rev = "v1.31.1"
+hooks = [
+  {
+    id = "zizmor",
+    args = [
+      "--offline",
+      "--persona=pedantic",
+      "--strict-collection",
+      "--no-progress",
+    ],
+    priority = 10,
+  },
+]

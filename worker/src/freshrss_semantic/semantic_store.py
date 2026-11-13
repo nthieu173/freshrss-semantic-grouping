@@ -105,9 +105,7 @@ class SemanticStore:
             }
             actual = {
                 str(row[0])
-                for row in connection.execute(
-                    "SELECT name FROM sqlite_master WHERE type = 'table'"
-                )
+                for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
             }
             if not required <= actual:
                 raise SchemaVersionError("semantic database is missing required tables")
@@ -347,9 +345,7 @@ class SemanticStore:
             output.append(GroupingInput(str(row[0]), int(row[1]), str(row[2]), vector))
         return output
 
-    def publish_groups(
-        self, snapshot: PipelineSnapshot, groups: Sequence[PublishedGroup]
-    ) -> None:
+    def publish_groups(self, snapshot: PipelineSnapshot, groups: Sequence[PublishedGroup]) -> None:
         now = int(time.time())
         with self.connection() as db, self.transaction(db):
             self.assert_snapshot(db, snapshot)

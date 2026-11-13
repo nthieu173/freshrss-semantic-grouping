@@ -77,9 +77,7 @@ def _child(command: str, database: str) -> None:
         detail = SemanticStore(database).get_state(
             "latest_error", f"{command} phase exited with status {completed.returncode}"
         )
-        raise RuntimeError(
-            f"{command} phase exited with status {completed.returncode}: {detail}"
-        )
+        raise RuntimeError(f"{command} phase exited with status {completed.returncode}: {detail}")
 
 
 def run(store: SemanticStore) -> bool:

@@ -32,9 +32,7 @@ def test_canonical_json_is_compact_and_sorted() -> None:
 
 
 def test_default_fingerprints_match_the_php_producer_contract() -> None:
-    config = WorkerConfig.from_mapping(
-        worker_config(embedding_model="minishlab/potion-base-8M")
-    )
+    config = WorkerConfig.from_mapping(worker_config(embedding_model="minishlab/potion-base-8M"))
     assert config.embedding_fingerprint == (
         "735c7ecc39088db6c69eff6eecb21a27d5d78d31652f6b745d4c715eaf8dcfdf"
     )

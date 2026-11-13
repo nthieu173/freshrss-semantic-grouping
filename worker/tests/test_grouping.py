@@ -70,9 +70,7 @@ def test_title_deduplication_can_reduce_a_potential_group_to_a_singleton() -> No
         GroupingInput("original", 10, "same title", np.array([1.0, 0.0], dtype=np.float32)),
         GroupingInput("duplicate", 20, "same title", np.array([0.9, 0.1], dtype=np.float32)),
     ]
-    result = Result(
-        [Duplicate({"entry_id": "duplicate"}, [({"entry_id": "original"}, 0.99)])]
-    )
+    result = Result([Duplicate({"entry_id": "duplicate"}, [({"entry_id": "original"}, 0.99)])])
 
     assert groups_from_result(result, inputs) == []
 

@@ -21,4 +21,3 @@ def test_embed_batches_and_repeat_run_is_idempotent(populate) -> None:
     assert [len(batch) for batch in encoder.batches] == [2, 2, 1]
     assert embed(store, lambda _model: (_ for _ in ()).throw(AssertionError("model loaded"))) == 0
     assert store.get_state("pending_embedding_count") == "0"
-

@@ -59,4 +59,3 @@ CREATE TABLE group_members (
 CREATE TABLE worker_state (key TEXT PRIMARY KEY, value TEXT NOT NULL) WITHOUT ROWID;
 CREATE TABLE export_state (key TEXT PRIMARY KEY, value TEXT NOT NULL) WITHOUT ROWID;
 PRAGMA user_version = 1;
-

@@ -2,11 +2,20 @@ FRESHRSS_VERSION ?= 1.30.4
 IMAGE_METADATA ?= image-metadata.json
 
 .PHONY: test test/all test/fast test/php test/worker test/compatibility test/smoke test/integration
+.PHONY: hooks/install hooks/check
 .PHONY: ci ci/all ci/check ci/verify-release-version ci/extension-artifact ci/release-notes
 
 test: test/all
 
 ci: ci/all
+
+# Install the git hooks in prek.toml (direnv provides prek and the tools).
+hooks/install:
+	prek install
+
+# Run every hook on every tracked file.
+hooks/check:
+	prek run --all-files
 
 test/fast: test/php test/worker
 

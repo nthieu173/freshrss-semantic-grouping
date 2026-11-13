@@ -10,3 +10,7 @@ build/
 semantic.sqlite*
 .coverage
 
+
+# direnv: cached Guix profile for manifest.scm, and your own settings
+/.direnv/
+/.envrc.local

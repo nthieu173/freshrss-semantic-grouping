@@ -1,0 +1,24 @@
+# Repository tools from PyPI: the hook runner and the linters it calls. The
+# worker's own tools (ruff, mypy, pytest) stay in worker/pyproject.toml. uv.lock
+# pins these; direnv installs them into .venv (.envrc). Update with
+# `uv lock --upgrade`.
+[project]
+name = "freshrss-semantic-grouping-dev"
+version = "0"
+requires-python = ">=3.12"
+
+[dependency-groups]
+dev = ["codespell>=2.4", "prek>=0.5.10,<1", "rumdl>=0.3.2"]
+
+# The same style as worker/pyproject.toml, for the Python outside worker/
+# (scripts/ci).
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.uv]
+# Not a Python package: only install the groups above.
+package = false

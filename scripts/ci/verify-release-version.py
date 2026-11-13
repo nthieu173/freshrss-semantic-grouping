@@ -6,9 +6,8 @@ from __future__ import annotations
 import json
 import os
 import re
-from pathlib import Path
-
 import tomllib
+from pathlib import Path
 
 REPOSITORY = Path(__file__).resolve().parents[2]
 PACKAGE_NAME = "freshrss-semantic-grouping"
@@ -45,7 +44,7 @@ versions = {
         REPOSITORY / "packaging/Containerfile",
         r"^ARG VERSION=([^\s]+)",
         "worker image",
-    ).strip('"\''),
+    ).strip("\"'"),
 }
 
 declared = versions["worker project"]
