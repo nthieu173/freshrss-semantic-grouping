@@ -1,22 +1,51 @@
-"""SQLite access with generation/revision compare-before-publish semantics."""
+"""Shared-database access with generation/revision compare-before-publish semantics.
+
+The database is SQLite at a path, or PostgreSQL when given a ``postgresql://``
+URL. SQL is written once with ``?`` placeholders; the PostgreSQL connection
+translates them.
+"""
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import sqlite3
 import time
-from collections.abc import Iterator, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any, Protocol
 
 import numpy as np
+import psycopg
 from numpy.typing import NDArray
+from psycopg.conninfo import conninfo_to_dict, make_conninfo
 
 from .config import ConfigurationError, PipelineSnapshot, WorkerConfig
 
 DATABASE_SCHEMA_VERSION = 3
+POSTGRES_SCHEMES = ("postgres://", "postgresql://")
+WORKER_LOCK = "semantic-worker"
+# Serializes PostgreSQL writers the way SQLite's BEGIN IMMEDIATE does, so a
+# compare-before-publish check stays valid until its commit.
+WRITE_LOCK = "semantic-write"
+REQUIRED_TABLES = frozenset(
+    {
+        "pipeline_config",
+        "candidate_generations",
+        "article_inputs",
+        "candidate_members",
+        "embeddings",
+        "groups",
+        "group_members",
+        "worker_state",
+        "export_state",
+        "managed_labels",
+        "label_sync_state",
+    }
+)
 
 
 class StoreError(RuntimeError):
@@ -33,6 +62,156 @@ class SnapshotChanged(StoreError):
 
 class IncompleteEmbeddings(StoreError):
     """Not every active candidate has a current embedding."""
+
+
+def is_postgres(database: str | Path) -> bool:
+    """Whether ``database`` names a PostgreSQL server rather than a SQLite file."""
+    return isinstance(database, str) and database.startswith(POSTGRES_SCHEMES)
+
+
+def lock_key(name: str) -> int:
+    """The advisory lock key the extension derives from the same name."""
+    digest = hashlib.sha256(f"freshrss-semantic-lock:{name}".encode()).hexdigest()
+    return int(digest[:15], 16)
+
+
+class Cursor(Protocol):
+    @property
+    def rowcount(self) -> int: ...
+
+    def fetchone(self) -> Any: ...
+
+    def fetchall(self) -> list[Any]: ...
+
+    def __iter__(self) -> Iterator[Any]: ...
+
+
+class Connection(Protocol):
+    """One open connection to either backend, with ``?`` placeholders."""
+
+    def execute(self, sql: str, parameters: Sequence[object] = ()) -> Cursor: ...
+
+    def executemany(self, sql: str, rows: Sequence[Sequence[object]]) -> None: ...
+
+    def begin_write(self) -> None: ...
+
+    def commit(self) -> None: ...
+
+    def rollback(self) -> None: ...
+
+    def close(self) -> None: ...
+
+
+class _SqliteConnection:
+    def __init__(self, path: Path, busy_timeout_ms: int) -> None:
+        self.raw = sqlite3.connect(path, timeout=busy_timeout_ms / 1000, isolation_level=None)
+        self.raw.row_factory = sqlite3.Row
+        self.raw.execute("PRAGMA foreign_keys = ON")
+        self.raw.execute(f"PRAGMA busy_timeout = {busy_timeout_ms}")
+        self.raw.execute("PRAGMA journal_mode = DELETE")
+
+    def execute(self, sql: str, parameters: Sequence[object] = ()) -> Cursor:
+        return self.raw.execute(sql, tuple(parameters))
+
+    def executemany(self, sql: str, rows: Sequence[Sequence[object]]) -> None:
+        self.raw.executemany(sql, [tuple(row) for row in rows])
+
+    def begin_write(self) -> None:
+        self.raw.execute("BEGIN IMMEDIATE")
+
+    def commit(self) -> None:
+        self.raw.commit()
+
+    def rollback(self) -> None:
+        self.raw.rollback()
+
+    def close(self) -> None:
+        self.raw.close()
+
+
+class _Row:
+    """A result row readable by position or column name, like ``sqlite3.Row``."""
+
+    __slots__ = ("_index", "_values")
+
+    def __init__(self, values: Sequence[Any], index: dict[str, int]) -> None:
+        self._values = values
+        self._index = index
+
+    def __getitem__(self, key: int | str) -> Any:
+        return self._values[self._index[key] if isinstance(key, str) else key]
+
+    def __len__(self) -> int:
+        return len(self._values)
+
+    def __iter__(self) -> Iterator[Any]:
+        return iter(self._values)
+
+
+def _row_factory(cursor: psycopg.Cursor[Any]) -> Callable[[Sequence[Any]], _Row]:
+    index = {column.name: number for number, column in enumerate(cursor.description or ())}
+    return lambda values: _Row(values, index)
+
+
+class _PostgresConnection:
+    def __init__(self, url: str, busy_timeout_ms: int) -> None:
+        settings = {} if "connect_timeout" in conninfo_to_dict(url) else {"connect_timeout": 5}
+        self.raw: psycopg.Connection[Any] = psycopg.connect(
+            make_conninfo(url, **settings), autocommit=True, row_factory=_row_factory
+        )
+        # The same bound SQLite's busy timeout gives a waiting writer.
+        self.raw.execute(f"SET lock_timeout = {int(busy_timeout_ms)}")
+
+    @staticmethod
+    def _sql(sql: str) -> str:
+        return sql.replace("%", "%%").replace("?", "%s")
+
+    def execute(self, sql: str, parameters: Sequence[object] = ()) -> Cursor:
+        if not parameters:
+            return self.raw.execute(sql.encode())
+        return self.raw.execute(self._sql(sql).encode(), tuple(parameters))
+
+    def executemany(self, sql: str, rows: Sequence[Sequence[object]]) -> None:
+        if rows:
+            with self.raw.cursor() as cursor:
+                cursor.executemany(self._sql(sql).encode(), [tuple(row) for row in rows])
+
+    def begin_write(self) -> None:
+        self.raw.execute(b"BEGIN")
+        try:
+            self.raw.execute(b"SELECT pg_advisory_xact_lock(%s)", (lock_key(WRITE_LOCK),))
+        except BaseException:
+            self.raw.execute(b"ROLLBACK")
+            raise
+
+    def commit(self) -> None:
+        self.raw.execute(b"COMMIT")
+
+    def rollback(self) -> None:
+        self.raw.execute(b"ROLLBACK")
+
+    def close(self) -> None:
+        self.raw.close()
+
+
+def open_connection(database: str | Path, busy_timeout_ms: int = 5000) -> Connection:
+    """Open either backend without validating the schema."""
+    if is_postgres(database):
+        return _PostgresConnection(str(database), busy_timeout_ms)
+    return _SqliteConnection(Path(database), busy_timeout_ms)
+
+
+def schema_version(connection: Connection, postgres: bool) -> int:
+    """The release schema version, or 0 when the extension has not created one."""
+    if not postgres:
+        return int(connection.execute("PRAGMA user_version").fetchone()[0])
+    table = connection.execute(
+        "SELECT to_regclass(quote_ident(current_schema()) || '.schema_version')"
+    ).fetchone()[0]
+    if table is None:
+        return 0
+    row = connection.execute("SELECT version FROM schema_version WHERE singleton = 1").fetchone()
+    return 0 if row is None else int(row[0])
 
 
 @dataclass(frozen=True)
@@ -67,47 +246,43 @@ class SemanticStore:
     """Worker-owned operations on the shared extension-created database."""
 
     def __init__(self, database: str | Path, busy_timeout_ms: int = 5000) -> None:
-        self.database = Path(database)
+        self.postgres = is_postgres(database)
+        self.database: str | Path = str(database) if self.postgres else Path(database)
         self.busy_timeout_ms = busy_timeout_ms
 
-    def connect(self) -> sqlite3.Connection:
-        """Open an existing database and validate its release schema."""
-        if not self.database.is_file():
-            raise SchemaVersionError("semantic database does not exist")
-        connection = sqlite3.connect(
-            self.database,
-            timeout=self.busy_timeout_ms / 1000,
-            isolation_level=None,
-        )
-        connection.row_factory = sqlite3.Row
-        connection.execute("PRAGMA foreign_keys = ON")
-        connection.execute(f"PRAGMA busy_timeout = {self.busy_timeout_ms}")
-        connection.execute("PRAGMA journal_mode = DELETE")
+    def exists(self) -> bool:
+        """Whether the extension has created the database yet."""
+        if not self.postgres:
+            return Path(self.database).is_file()
+        connection = open_connection(self.database, self.busy_timeout_ms)
         try:
-            version = int(connection.execute("PRAGMA user_version").fetchone()[0])
+            return schema_version(connection, postgres=True) != 0
+        finally:
+            connection.close()
+
+    def connect(self) -> Connection:
+        """Open an existing database and validate its release schema."""
+        if not self.postgres and not Path(self.database).is_file():
+            raise SchemaVersionError("semantic database does not exist")
+        connection = open_connection(self.database, self.busy_timeout_ms)
+        try:
+            version = schema_version(connection, self.postgres)
+            if version == 0 and self.postgres:
+                raise SchemaVersionError("semantic database does not exist")
             if version != DATABASE_SCHEMA_VERSION:
                 raise SchemaVersionError(
                     "unsupported semantic database schema "
                     f"{version}; expected {DATABASE_SCHEMA_VERSION}"
                 )
-            required = {
-                "pipeline_config",
-                "candidate_generations",
-                "article_inputs",
-                "candidate_members",
-                "embeddings",
-                "groups",
-                "group_members",
-                "worker_state",
-                "export_state",
-                "managed_labels",
-                "label_sync_state",
-            }
-            actual = {
-                str(row[0])
-                for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
-            }
-            if not required <= actual:
+            if self.postgres:
+                tables = connection.execute(
+                    "SELECT table_name FROM information_schema.tables"
+                    " WHERE table_schema = current_schema()"
+                )
+            else:
+                tables = connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
+            actual = {str(row[0]) for row in tables}
+            if not REQUIRED_TABLES.issubset(actual):
                 raise SchemaVersionError("semantic database is missing required tables")
         except Exception:
             connection.close()
@@ -115,7 +290,7 @@ class SemanticStore:
         return connection
 
     @contextmanager
-    def connection(self) -> Iterator[sqlite3.Connection]:
+    def connection(self) -> Iterator[Connection]:
         """Yield a validated connection and always release its file handle."""
         connection = self.connect()
         try:
@@ -124,8 +299,8 @@ class SemanticStore:
             connection.close()
 
     @contextmanager
-    def transaction(self, connection: sqlite3.Connection) -> Iterator[None]:
-        connection.execute("BEGIN IMMEDIATE")
+    def transaction(self, connection: Connection) -> Iterator[None]:
+        connection.begin_write()
         try:
             yield
         except BaseException:
@@ -134,7 +309,7 @@ class SemanticStore:
         else:
             connection.commit()
 
-    def load_snapshot(self, connection: sqlite3.Connection | None = None) -> PipelineSnapshot:
+    def load_snapshot(self, connection: Connection | None = None) -> PipelineSnapshot:
         """Load and validate the active producer configuration."""
         owned = connection is None
         db = connection or self.connect()
@@ -178,7 +353,7 @@ class SemanticStore:
             raise ConfigurationError("producer lease has expired")
 
     @staticmethod
-    def assert_snapshot(connection: sqlite3.Connection, snapshot: PipelineSnapshot) -> None:
+    def assert_snapshot(connection: Connection, snapshot: PipelineSnapshot) -> None:
         row = connection.execute(
             "SELECT active_generation, config_revision FROM pipeline_config WHERE singleton = 1"
         ).fetchone()
@@ -189,7 +364,7 @@ class SemanticStore:
         ):
             raise SnapshotChanged("active candidate generation or configuration changed")
 
-    def set_state(self, key: str, value: str, connection: sqlite3.Connection | None = None) -> None:
+    def set_state(self, key: str, value: str, connection: Connection | None = None) -> None:
         owned = connection is None
         db = connection or self.connect()
         try:
@@ -216,10 +391,10 @@ class SemanticStore:
                 self.set_state("latest_error", _safe_error(error), db)
                 self.set_state("latest_error_phase", phase, db)
                 self.set_state("latest_error_at", now, db)
-        except (sqlite3.Error, StoreError, ConfigurationError):
+        except (sqlite3.Error, psycopg.Error, StoreError, ConfigurationError):
             pass
 
-    def pending_count(self, connection: sqlite3.Connection, snapshot: PipelineSnapshot) -> int:
+    def pending_count(self, connection: Connection, snapshot: PipelineSnapshot) -> int:
         row = connection.execute(
             """
             SELECT COUNT(*)
@@ -236,7 +411,7 @@ class SemanticStore:
         return int(row[0])
 
     def pending_inputs(
-        self, connection: sqlite3.Connection, snapshot: PipelineSnapshot, limit: int
+        self, connection: Connection, snapshot: PipelineSnapshot, limit: int
     ) -> list[PendingInput]:
         rows = connection.execute(
             """
@@ -294,13 +469,13 @@ class SemanticStore:
                         snapshot.config.embedding_fingerprint,
                         snapshot.config.embedding_model,
                         int(vector.shape[0]),
-                        sqlite3.Binary(vector.astype("<f4", copy=False).tobytes(order="C")),
+                        vector.astype("<f4", copy=False).tobytes(order="C"),
                         now,
                     ),
                 )
 
     def load_grouping_inputs(
-        self, connection: sqlite3.Connection, snapshot: PipelineSnapshot
+        self, connection: Connection, snapshot: PipelineSnapshot
     ) -> list[GroupingInput]:
         candidate_count = int(
             connection.execute(

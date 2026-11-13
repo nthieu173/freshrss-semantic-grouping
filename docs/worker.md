@@ -13,11 +13,12 @@ freshrss-semantic run
 freshrss-semantic rebuild
 ```
 
-Every mutating command coordinates through an advisory lock beside the semantic
-database. `run` holds that lock and invokes cleanup, embedding, and grouping as
-separate child processes. An internal marker lets those children participate in
-the already locked run without reacquiring it. Direct concurrent invocations
-exit without overlapping mutations.
+Every mutating command coordinates through an advisory lock: a file beside the
+SQLite database, or a PostgreSQL session advisory lock. `run` holds that lock
+and invokes cleanup, embedding, and grouping as separate child processes. An
+internal marker lets those children participate in the already locked run
+without reacquiring it. Direct concurrent invocations exit without overlapping
+mutations.
 
 Before spawning work, `run` validates schema and configuration, then exits
 successfully when the pipeline is disabled, the producer lease expired, or the
@@ -27,15 +28,19 @@ invokes it every 10 minutes with a stable, randomized per-host offset of up to
 
 ## Configuration snapshot
 
-The worker reads only `pipeline_config` from the fixed semantic database. It
+The worker reads only `pipeline_config` from the semantic database: SQLite at
+the fixed path, or PostgreSQL when `SEMANTIC_DATABASE_URL` (or `--database`)
+is a `postgresql://` URL. Child phases receive that URL through the
+environment, never their command line. It
 validates database schema 3 and the published configuration, then snapshots the
 active generation and configuration revision. It rechecks both inside each
 write transaction that could affect a visible result.
 
-An absent database is logged as not configured and treated as a successful
-no-op. An unknown schema, malformed configuration, or expired lease is reported
-safely. The worker never creates, migrates, renames, replaces, or deletes the
-shared database file.
+An absent database (or a PostgreSQL schema the extension has not created yet)
+is logged as not configured and treated as a successful no-op. An unknown
+schema, malformed configuration, or expired lease is reported safely. The
+worker never creates, migrates, renames, replaces, or deletes the shared
+database or its tables.
 
 ## Embedding phase
 
@@ -95,9 +100,9 @@ and the SemHash/USearch index do not occupy memory together. Each phase logs
 entry count, dimensions where applicable, duration, and peak RSS. The integration
 contract runs the real bundled model and SemHash below a 400 MiB hard limit.
 
-The image uses Python 3.14 with pinned direct and transitive dependencies. It
-bundles `minishlab/potion-base-8M` at pinned model revision
-`bf8b056651a2c21b8d2565580b8569da283cab23`, runs as UID 10001 and GID 33, has
+The image uses the Python in `packaging/Containerfile` with pinned direct and
+transitive dependencies. It bundles `minishlab/potion-base-8M` at the model
+revision pinned there as `MODEL_REVISION`, runs as UID 10001 and GID 33, has
 no network listener, supports a read-only root filesystem, and uses `/tmp` only
 for runtime caches. The bundled default model works with networking disabled.
 

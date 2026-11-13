@@ -2,8 +2,9 @@
 
 ## Responsibilities and hooks
 
-`xExtension-SemanticGrouping` is a user extension requiring FreshRSS 1.28 or
-newer and tested against 1.30.4. Its entry point registers:
+`xExtension-SemanticGrouping` is a user extension. `install()` refuses FreshRSS
+releases older than it supports, and the integration tests run it against the
+release pinned in the `Makefile`. Its entry point registers:
 
 - `EntryBeforeAdd` for exact-title rejection;
 - `FreshrssUserMaintenance` for candidate and native-label reconciliation;
@@ -46,7 +47,7 @@ variants of quotation marks compare equally.
 The selector stores a saved query's numeric identity and current name. Resolution
 constructs a `FreshRSS_UserQuery`, rejects deprecated or unfiltered definitions,
 maps its native source type and ID, preserves its state flags, and clones its
-`FreshRSS_BooleanSearch`. Both FreshRSS 1.30.4 encodings of unfiltered “all” state
+`FreshRSS_BooleanSearch`. Both FreshRSS encodings of unfiltered “all” state
 are recognized when deciding whether a saved query is empty.
 
 A rolling UTC date constraint is added as a separate Boolean-search child. The
@@ -74,7 +75,8 @@ FreshRSS fields remain in FreshRSS.
 
 ## Candidate reconciliation
 
-Maintenance acquires a non-blocking per-user file lock. It returns when another
+Maintenance acquires a non-blocking per-user lock (a file lock, or a PostgreSQL
+advisory lock). It returns when another
 exporter is active or when the configured interval has not elapsed and neither
 the settings nor expanded query fingerprint changed. Saving changed settings
 or changing the query definition bypasses the interval.
@@ -102,7 +104,8 @@ personal labels remain untouched.
 Changing the rebuild token invalidates embedding and grouping fingerprints
 without deleting producer data. Full reset is an administrator action: it takes
 the exporter lock and worker lock, transactionally drops and recreates schema in
-the existing database file, and immediately republishes candidates. It can
+the existing database file (or its own PostgreSQL tables), and immediately
+republishes candidates. It can
 recover an unknown schema version without renaming or replacing the file.
 
 ## Native-label reconciliation and status

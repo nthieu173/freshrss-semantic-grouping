@@ -29,19 +29,8 @@ final class SemanticGrouping_CandidateExporter {
 			$this->config = SemanticGrouping_Config::defaults();
 			$this->config['enabled'] = false;
 		}
-		$directory = dirname($this->database->path);
-		if (!is_dir($directory)) {
-			throw new RuntimeException('Semantic data directory is missing.');
-		}
-		$user = Minz_User::name() ?? '_';
-		$lockPath = $directory . '/.semantic-export-' . substr(hash('sha256', $user), 0, 16) . '.lock';
-		$lock = fopen($lockPath, 'c');
-		if ($lock === false) {
-			throw new RuntimeException('Candidate exporter lock cannot be opened.');
-		}
-		@chmod($lockPath, 0660);
-		if (!flock($lock, LOCK_EX | LOCK_NB)) {
-			fclose($lock);
+		$lock = $this->database->tryLock(self::lockName());
+		if ($lock === null) {
 			return false;
 		}
 
@@ -52,8 +41,7 @@ final class SemanticGrouping_CandidateExporter {
 			}
 			return $this->exportLocked($force);
 		} finally {
-			flock($lock, LOCK_UN);
-			fclose($lock);
+			$lock->release();
 		}
 	}
 
@@ -62,19 +50,8 @@ final class SemanticGrouping_CandidateExporter {
 		if ($configErrors !== [] || empty($this->config['enabled'])) {
 			throw new InvalidArgumentException($configErrors === [] ? 'Enable the pipeline before resetting it.' : implode(' ', $configErrors));
 		}
-		$directory = dirname($this->database->path);
-		if (!is_dir($directory)) {
-			throw new RuntimeException('Semantic data directory is missing.');
-		}
-		$user = Minz_User::name() ?? '_';
-		$lockPath = $directory . '/.semantic-export-' . substr(hash('sha256', $user), 0, 16) . '.lock';
-		$lock = fopen($lockPath, 'c');
-		if ($lock === false) {
-			throw new RuntimeException('Candidate exporter lock cannot be opened.');
-		}
-		@chmod($lockPath, 0660);
-		if (!flock($lock, LOCK_EX | LOCK_NB)) {
-			fclose($lock);
+		$lock = $this->database->tryLock(self::lockName());
+		if ($lock === null) {
 			throw new RuntimeException('A candidate export is active; reset was not started.');
 		}
 		try {
@@ -84,9 +61,12 @@ final class SemanticGrouping_CandidateExporter {
 			});
 			return $exported;
 		} finally {
-			flock($lock, LOCK_UN);
-			fclose($lock);
+			$lock->release();
 		}
+	}
+
+	private static function lockName(): string {
+		return SemanticGrouping_SemanticDatabase::userLockName('semantic-export', Minz_User::name() ?? '_');
 	}
 
 	private function exportLocked(bool $force): bool {

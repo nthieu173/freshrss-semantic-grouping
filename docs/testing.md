@@ -17,6 +17,13 @@ Worker unit tests use deterministic fake encoders for most cases and separately
 exercise SemHash's real precomputed-embedding USearch API. The dependency set is
 also checked to ensure sqlite-vec is not required.
 
+`make test/postgres` starts a disposable PostgreSQL container and runs both
+suites again with `SEMANTIC_TEST_POSTGRES_URL` set: the PHP database scenario,
+the PostgreSQL schema against its fixture, lock contention, writer
+serialization and full reset, and every worker test that uses the database
+fixture. Each run works in its own schema. Without that variable both suites
+skip their PostgreSQL cases.
+
 `make test/compatibility` clones the pinned FreshRSS release into a temporary
 directory and checks the extension entry point against that source tree. This is
 the same compatibility command used by CI. `make test` aliases `make test/all`
@@ -37,7 +44,12 @@ CONTAINER_RUNTIME=podman WORKER_IMAGE=freshrss-semantic:dev \
 
 ## Clean-room integration
 
-`make test/integration` creates a clean pinned FreshRSS 1.30.4 environment, installs
+`SEMANTIC_BACKEND=postgres make test/integration` repeats the integration below
+with the extension and worker sharing a PostgreSQL container over a private
+network instead of the SQLite file.
+
+`make test/integration` creates a clean environment from the pinned FreshRSS
+image (`FRESHRSS_VERSION` in the `Makefile`), installs
 and enables the extension, initializes real FreshRSS SQLite data, and creates
 feeds, entries, a label, and saved queries. It exercises native feed, category,
 title, content, tag, label, unread/favourite, date, nested `OR`, and negation

@@ -73,12 +73,19 @@ function saveFixture(array $value): void {
 	chmod(SEMANTIC_FIXTURE_PATH, 0660);
 }
 
-/** @return PDO */
+/** The shared database the extension is configured for, opened directly. */
 function semanticDatabase(): PDO {
-	return new PDO('sqlite:' . SEMANTIC_DATABASE_PATH, null, null, [
+	$options = [
 		PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
 		PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-	]);
+	];
+	$url = getenv('SEMANTIC_DATABASE_URL');
+	if (is_string($url) && $url !== '') {
+		require_once __DIR__ . '/Models/SemanticDatabase.php';
+		[$dsn, $user, $password] = SemanticGrouping_SemanticDatabase::postgresDsn($url);
+		return new PDO($dsn, $user, $password, $options);
+	}
+	return new PDO('sqlite:' . SEMANTIC_DATABASE_PATH, null, null, $options);
 }
 
 /** @return array<string,string> */

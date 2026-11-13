@@ -271,20 +271,17 @@ final class SemanticGrouping_LabelReconciler {
 	}
 
 	public function removeManagedLabels(): void {
-		$directory = dirname($this->database->path);
-		$lock = null;
-		if (is_dir($directory)) {
-			$user = Minz_User::name() ?? '_';
-			$lockPath = $directory . '/.semantic-label-' . substr(hash('sha256', $user), 0, 16) . '.lock';
-			$lock = fopen($lockPath, 'c');
-			if ($lock === false) {
-				throw new RuntimeException('Semantic label cleanup lock cannot be opened.');
-			}
-			@chmod($lockPath, 0660);
-			if (!flock($lock, LOCK_EX | LOCK_NB)) {
-				fclose($lock);
-				throw new RuntimeException('Semantic label synchronization is active; cleanup was deferred.');
-			}
+		try {
+			$lock = $this->database->tryLock(self::labelLockName());
+			$contended = $lock === null;
+		} catch (Throwable) {
+			// Semantic storage is unreachable, so no synchronization can be
+			// running against it; native label attributes identify what to remove.
+			$lock = null;
+			$contended = false;
+		}
+		if ($contended) {
+			throw new RuntimeException('Semantic label synchronization is active; cleanup was deferred.');
 		}
 		try {
 			foreach ($this->nativeTags() as $tag) {
@@ -306,17 +303,14 @@ final class SemanticGrouping_LabelReconciler {
 				FreshRSS_UserDAO::touch();
 			}
 		} finally {
-			if (is_resource($lock)) {
-				flock($lock, LOCK_UN);
-				fclose($lock);
-			}
+			$lock?->release();
 		}
 	}
 
 	/** @return null|array{generation:int,grouping_fingerprint:string,candidate_ids:list<string>,groups:list<array{group_id:string,representative_entry_id:string,members:list<string>}>} */
 	private function publishedSnapshot(): ?array {
 		$pdo = $this->database->open(false);
-		$pdo->beginTransaction();
+		SemanticGrouping_SemanticDatabase::beginRead($pdo);
 		try {
 			$pipeline = $pdo->query('SELECT active_generation, config_json FROM pipeline_config WHERE singleton=1')->fetch();
 			if (!is_array($pipeline)) {
@@ -412,7 +406,7 @@ final class SemanticGrouping_LabelReconciler {
 		$pdo = $this->database->open(false);
 		SemanticGrouping_SemanticDatabase::transaction($pdo, static function (PDO $db) use ($tags, $generation, $fingerprint, $errors, $now): void {
 			$db->exec('DELETE FROM managed_labels');
-			$insert = $db->prepare('INSERT OR IGNORE INTO managed_labels(semantic_key, label_id, label_name, selection_generation, updated_at) VALUES (?, ?, ?, ?, ?)');
+			$insert = $db->prepare('INSERT INTO managed_labels(semantic_key, label_id, label_name, selection_generation, updated_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT DO NOTHING');
 			foreach ($tags as $tag) {
 				$key = self::ownedKey($tag);
 				if ($key !== null) {
@@ -484,22 +478,11 @@ final class SemanticGrouping_LabelReconciler {
 
 	/** @param callable():bool $callback */
 	private function withLocks(callable $callback): bool {
-		$directory = dirname($this->database->path);
-		$user = Minz_User::name() ?? '_';
-		$paths = [
-			$directory . '/.semantic-label-' . substr(hash('sha256', $user), 0, 16) . '.lock',
-			$directory . '/.semantic-worker.lock',
-		];
 		$locks = [];
 		try {
-			foreach ($paths as $path) {
-				$lock = fopen($path, 'c');
-				if ($lock === false) {
-					throw new RuntimeException('Semantic synchronization lock cannot be opened.');
-				}
-				@chmod($path, 0660);
-				if (!flock($lock, LOCK_EX | LOCK_NB)) {
-					fclose($lock);
+			foreach ([self::labelLockName(), SemanticGrouping_SemanticDatabase::WORKER_LOCK] as $name) {
+				$lock = $this->database->tryLock($name);
+				if ($lock === null) {
 					return false;
 				}
 				$locks[] = $lock;
@@ -507,10 +490,13 @@ final class SemanticGrouping_LabelReconciler {
 			return $callback();
 		} finally {
 			foreach (array_reverse($locks) as $lock) {
-				flock($lock, LOCK_UN);
-				fclose($lock);
+				$lock->release();
 			}
 		}
+	}
+
+	private static function labelLockName(): string {
+		return SemanticGrouping_SemanticDatabase::userLockName('semantic-label', Minz_User::name() ?? '_');
 	}
 
 	private static function safeError(Throwable $error): string {

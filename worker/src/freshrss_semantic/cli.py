@@ -14,12 +14,23 @@ from collections.abc import Iterator, Sequence
 from contextlib import contextmanager, suppress
 from pathlib import Path
 
+import psycopg
+
 from .config import ConfigurationError
 from .embeddings import embed
 from .grouping import group
-from .semantic_store import SemanticStore, StoreError
+from .semantic_store import (
+    WORKER_LOCK,
+    SemanticStore,
+    StoreError,
+    is_postgres,
+    lock_key,
+    open_connection,
+)
 
 DEFAULT_DATABASE = "/semantic-data/semantic.sqlite"
+DATABASE_URL_ENV = "SEMANTIC_DATABASE_URL"
+DATABASE_PATH_ENV = "SEMANTIC_DATABASE"
 CHILD_PROCESS_ENV = "FRESHRSS_SEMANTIC_CHILD_PROCESS"
 LOGGER = logging.getLogger(__name__)
 
@@ -31,7 +42,21 @@ class AlreadyRunning(RuntimeError):
 @contextmanager
 def worker_lock(database: str | Path) -> Iterator[None]:
     """Take the worker-only advisory lock without waiting."""
-    lock_path = Path(database).parent / ".semantic-worker.lock"
+    if is_postgres(database):
+        # A session lock on its own connection, released if this process dies.
+        connection = open_connection(database)
+        try:
+            row = connection.execute(
+                "SELECT pg_try_advisory_lock(?)", (lock_key(WORKER_LOCK),)
+            ).fetchone()
+            if not row[0]:
+                raise AlreadyRunning("another semantic worker run is active")
+            yield
+        finally:
+            connection.close()
+        return
+
+    lock_path = Path(database).parent / f".{WORKER_LOCK}.lock"
     descriptor = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o660)
     try:
         # FreshRSS may have created the shared lock first under another UID.
@@ -68,8 +93,12 @@ def _run_due(store: SemanticStore, now: int) -> bool:
 def _child(command: str, database: str) -> None:
     environment = os.environ.copy()
     environment[CHILD_PROCESS_ENV] = "1"
+    # Through the environment, not argv: a URL may carry a password.
+    environment.pop(DATABASE_URL_ENV, None)
+    environment.pop(DATABASE_PATH_ENV, None)
+    environment[DATABASE_URL_ENV if is_postgres(database) else DATABASE_PATH_ENV] = database
     completed = subprocess.run(
-        [sys.executable, "-m", "freshrss_semantic.cli", "--database", database, command],
+        [sys.executable, "-m", "freshrss_semantic.cli", command],
         check=False,
         env=environment,
     )
@@ -104,8 +133,15 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="freshrss-semantic")
     parser.add_argument(
         "--database",
-        default=os.environ.get("SEMANTIC_DATABASE", DEFAULT_DATABASE),
-        help="semantic database path (defaults to the fixed container path)",
+        default=(
+            os.environ.get(DATABASE_URL_ENV)
+            or os.environ.get(DATABASE_PATH_ENV)
+            or DEFAULT_DATABASE
+        ),
+        help=(
+            "SQLite database path, or a postgresql:// URL (defaults to"
+            f" ${DATABASE_URL_ENV}, then ${DATABASE_PATH_ENV}, then the fixed container path)"
+        ),
     )
     parser.add_argument("--verbose", action="store_true")
     actions = parser.add_subparsers(dest="command", required=True)
@@ -139,10 +175,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
     )
     store = SemanticStore(args.database)
-    if not store.database.exists():
-        LOGGER.info("semantic worker is not configured: semantic database does not exist")
-        return 0
     try:
+        if not store.exists():
+            LOGGER.info("semantic worker is not configured: semantic database does not exist")
+            return 0
         if (
             args.command in {"embed", "group", "cleanup"}
             and os.environ.get(CHILD_PROCESS_ENV) != "1"
@@ -161,6 +197,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         OSError,
         RuntimeError,
         sqlite3.Error,
+        psycopg.Error,
         StoreError,
         ValueError,
     ) as error:

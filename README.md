@@ -7,9 +7,13 @@ query, and reconciles the last published semantic groups into native FreshRSS
 labels. The worker sees only the
 shared semantic database; it never mounts or queries FreshRSS application data.
 
-The current release targets FreshRSS **1.30.4**, Python **3.14**, and
-`linux/arm64`. The shared database schema version is **3** and the extension
-configuration schema version is **3**.
+The FreshRSS release it is tested against is `FRESHRSS_VERSION` in the
+`Makefile`; the oldest it installs on is checked in the extension's
+`install()`. The worker image's Python comes from `PYTHON_IMAGE` in
+`packaging/Containerfile`, and releases are built for `linux/arm64`. The shared
+database and extension configuration schema versions are `SCHEMA_VERSION` in
+`Models/SemanticDatabase.php` and `Models/Config.php`. Each release's notes
+state its FreshRSS release and database schema.
 
 ## Data flow
 
@@ -44,7 +48,9 @@ does not mark or delete FreshRSS entries and never changes personal labels.
 1. Copy `extension/xExtension-SemanticGrouping` into the FreshRSS extensions
    directory and enable it for the target user.
 2. Mount a directory owned by the shared group (GID 33, mode `2770`) at
-   `/semantic-data` in both containers.
+   `/semantic-data` in both containers, or set `SEMANTIC_DATABASE_URL` to the
+   same `postgresql://` URL in both to use PostgreSQL instead
+   ([details](docs/deployment.md#postgresql-storage)).
 3. Keep the default **All entries** candidate source, or select a non-empty
    FreshRSS saved query, in the extension configuration.
 4. Run the worker every ten minutes with a stable, randomized per-host offset
@@ -66,6 +72,7 @@ their peak memory is not additive.
 
 ```sh
 make test/fast
+CONTAINER_RUNTIME=podman make test/postgres
 make test/compatibility
 make test/integration
 CONTAINER_RUNTIME=podman make test/integration
@@ -86,10 +93,11 @@ Component and operational details are split across the linked documents under
 
 ## Privacy and recovery
 
-`semantic.sqlite` contains normalized titles and bounded, normalized
-title/content-derived text when those fields are enabled. Protect it like
-FreshRSS data. It is reproducible and may be excluded from backups, but it must
-not be deleted or replaced while either process is using it. Full reset is
-extension-owned; worker `rebuild` deletes only worker-owned derived rows.
+The semantic database (`semantic.sqlite`, or its PostgreSQL tables) contains
+normalized titles and bounded, normalized title/content-derived text when those
+fields are enabled. Protect it like FreshRSS data. It is reproducible and may
+be excluded from backups, but it must not be deleted or replaced while either
+process is using it. Full reset is extension-owned; worker `rebuild` deletes
+only worker-owned derived rows.
 
 Released under the GNU General Public License v3.0.

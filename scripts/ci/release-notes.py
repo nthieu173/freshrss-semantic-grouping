@@ -25,7 +25,9 @@ match = re.search(r"public const SCHEMA_VERSION = (\d+);", database_source.read_
 if match is None:
     raise SystemExit("could not read the semantic database schema version")
 
-freshrss_version = os.environ.get("FRESHRSS_VERSION", "1.30.0")
+freshrss_version = os.environ.get("FRESHRSS_VERSION")
+if not freshrss_version:
+    raise SystemExit("set FRESHRSS_VERSION, or run make ci/release-notes")
 print(
     f"Supported FreshRSS: {freshrss_version}. "
     f"Semantic database schema: {match.group(1)}. OCI digest: {digest}"

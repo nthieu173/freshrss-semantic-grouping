@@ -1,6 +1,7 @@
 # Deployment
 
-The worker build follows the latest Python 3.14 patch image and uv release.
+The worker build follows the latest patch image of the Python minor version in
+`packaging/Containerfile`, and the latest uv release.
 Application dependencies remain exact versions in `worker/pyproject.toml` and
 `worker/uv.lock`; the final worker image and extension are released together.
 
@@ -22,8 +23,8 @@ The worker image runs as UID 10001 with primary GID 33, has no network listener,
 and expects a read-only root filesystem plus a small writable `/tmp` tmpfs. The
 default model is baked into `/opt/models/potion-base-8M`, so normal runs need no
 outbound network. Release builds pin that model to Hugging Face revision
-`bf8b056651a2c21b8d2565580b8569da283cab23`; override the `MODEL_REVISION`
-build argument only as part of a tested paired release.
+`MODEL_REVISION` in `packaging/Containerfile`; override that build argument only
+as part of a tested paired release.
 
 A non-default model is resolved through Hugging Face into `/tmp/huggingface`.
 Such a configuration therefore needs outbound access and a `/tmp` allocation
@@ -62,6 +63,37 @@ does not exist yet, the pipeline is disabled, the producer lease is expired,
 the active generation has no pending work, or another worker owns the advisory
 lock. An absent database is logged at informational level as not configured.
 
+## PostgreSQL storage
+
+To keep the semantic database in PostgreSQL instead of the shared directory,
+give both containers the same connection URL through an environment file
+rather than the command line. The password can sit in the URL's user-info part
+or, as here, in libpq's `PGPASSWORD`:
+
+```sh
+SEMANTIC_DATABASE_URL=postgresql://semantic@postgres:5432/semantic
+PGPASSWORD=...
+```
+
+The FreshRSS image already includes `pdo_pgsql`. Create the schema once with
+`php extensions/xExtension-SemanticGrouping/cli/migrate.php` as the FreshRSS
+user (enabling the extension also does it). The worker then needs a network
+that reaches PostgreSQL instead of `--network none`, and no `/semantic-data`
+mount:
+
+```sh
+podman run --rm \
+  --read-only \
+  --tmpfs /tmp:rw,size=32m \
+  --memory 400m \
+  --network DATABASE-NETWORK \
+  --env-file /run/semantic-worker.env \
+  ghcr.io/OWNER/freshrss-semantic-grouping:VERSION run
+```
+
+The run is still a successful no-op until the extension has created the schema.
+See [the database contract](database.md#postgresql) for locking and reset.
+
 ## Failure behavior
 
 - A semantic storage or saved-query error is logged and swallowed by the
@@ -75,7 +107,7 @@ lock. An absent database is logged at informational level as not configured.
 - Incomplete or failed worker publication leaves all prior native semantic
   labels in place.
 
-FreshRSS 1.30.4 invokes user maintenance before the current feed actualization.
+FreshRSS invokes user maintenance before the current feed actualization.
 Newly fetched articles are therefore normally included on the following
 scheduled actualization; this one-cycle lag is intentional in the first
 release.

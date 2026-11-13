@@ -1,7 +1,10 @@
 # Semantic database contract
 
-The fixed runtime path is `/semantic-data/semantic.sqlite`. No browser parameter
-can change it. The extension creates and migrates the database; the worker
+By default the database is SQLite at the fixed path
+`/semantic-data/semantic.sqlite`. Setting `SEMANTIC_DATABASE_URL` to a
+`postgresql://` URL in both the FreshRSS and worker environments moves it to
+PostgreSQL instead (see [PostgreSQL](#postgresql)). No browser parameter can
+change either. The extension creates and migrates the database; the worker
 validates schema version 3 and refuses to migrate, rename, delete, or replace an
 unknown database.
 
@@ -60,3 +63,42 @@ groups, group members, and worker state. The extension's administrator-only full
 reset takes that same lock, transactionally recreates the schema in the existing
 database file, and republishes the candidate generation. Neither action renames
 or replaces the live SQLite file.
+
+## PostgreSQL
+
+`SEMANTIC_DATABASE_URL` takes a libpq connection URL, for example
+`postgresql://semantic@postgres:5432/semantic`. Anything the URL leaves out
+comes from libpq's own variables, so the password may be in the URL's user-info
+part, `PGPASSWORD`, or a `PGPASSFILE`. Query parameters such as `sslmode` or
+`options=-csearch_path%3Dsemantic` pass through to libpq; the tables live in
+the connection's current schema. Both components must use the same database,
+schema and role (or roles with full rights on the tables the extension creates).
+
+The schema is the v3 contract with PostgreSQL types: integers are `BIGINT`,
+embeddings are `BYTEA`, and a one-row `schema_version` table stands in for
+SQLite's `PRAGMA user_version`. The complete DDL is
+`fixtures/semantic-schema-v3.postgres.sql`. A PostgreSQL database is always
+created at the current version; the v1 and v2 migrations apply only to SQLite.
+The extension refuses to create its tables in a schema that already holds
+unversioned tables of the same names.
+
+SQLite's locking is reproduced rather than relaxed:
+
+- Every write transaction first takes the transaction-level advisory lock
+  `semantic-write`, so writers run one at a time as with `BEGIN IMMEDIATE`, and
+  the generation/revision rechecks stay valid until commit. Readers are not
+  blocked. `lock_timeout` is five seconds, matching SQLite's busy timeout.
+- Label reconciliation reads its publication in one `REPEATABLE READ, READ ONLY`
+  transaction.
+- The exporter, label and worker locks are session-level advisory locks on a
+  dedicated connection instead of files under `/semantic-data`; a crashed
+  holder releases them when its connection closes. Both components derive the
+  same 60-bit key from each lock name.
+
+Full reset drops and recreates only the tables listed above; anything else in
+the schema is left alone. Switching an existing deployment between SQLite and
+PostgreSQL does not copy data: the extension creates an empty PostgreSQL schema
+(on enable, or through `cli/migrate.php`) and republishes candidates at the next
+maintenance pass, and the worker recomputes embeddings. Native label attributes
+remain the ownership authority, so existing semantic labels are reconciled
+rather than duplicated.

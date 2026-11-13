@@ -3,9 +3,9 @@
 ## Status and scope
 
 This document describes the architecture implemented by the paired FreshRSS
-extension and Python worker in this repository. The current design targets
-FreshRSS 1.30.4, Python 3.14, `linux/arm64`, extension configuration schema 3,
-and semantic database schema 3.
+extension and Python worker in this repository. The FreshRSS, Python and schema
+versions it is built and tested against are listed in the
+[README](README.md) by where each is pinned.
 
 The extension owns user interaction, FreshRSS integration, candidate selection,
 and candidate publication. The worker owns embeddings and semantic groups. The
@@ -48,7 +48,10 @@ FreshRSS container
 There is no network protocol between the components. The worker receives only
 `/semantic-data/semantic.sqlite`; FreshRSS application data is not mounted into
 its container. The database path is fixed and cannot be selected by a browser
-parameter.
+parameter. An operator may instead give both components the same
+`SEMANTIC_DATABASE_URL`, which moves the identical schema into PostgreSQL; the
+worker then reaches only that database. Locking and transactions keep SQLite's
+semantics there ([details](docs/database.md#postgresql)).
 
 The shared read/write database makes the extension and worker one trust domain.
 Table ownership is a code and transaction boundary, not a filesystem security
@@ -148,7 +151,7 @@ and groups stay usable until a complete replacement can be published.
 FreshRSS user maintenance first reconciles any complete worker publication into
 native labels, then performs bounded candidate reconciliation. This ordering
 prevents a due export from outrunning a result published since the preceding
-maintenance pass. FreshRSS 1.30.4 runs this hook before the current feed
+maintenance pass. FreshRSS runs this hook before the current feed
 actualization, so newly fetched entries normally enter the following maintenance
 export. This one-cycle lag is an accepted initial-release tradeoff.
 
@@ -242,6 +245,6 @@ and published mappings.
 - [FreshRSS extension documentation](https://freshrss.github.io/FreshRSS/en/developers/03_Backend/05_Extensions.html)
 - [FreshRSS article filtering](https://freshrss.github.io/FreshRSS/en/users/10_filter.html)
 - [FreshRSS saved user queries](https://freshrss.github.io/FreshRSS/en/users/user_queries.html)
-- [FreshRSS 1.30.4 maintenance-hook timing](https://github.com/FreshRSS/FreshRSS/blob/1.30.4/app/Controllers/feedController.php#L891-L938)
+- [FreshRSS maintenance-hook timing](https://github.com/FreshRSS/FreshRSS/blob/1.30.4/app/Controllers/feedController.php#L891-L938)
 - [SemHash](https://github.com/MinishLab/semhash)
 - [Model2Vec](https://github.com/MinishLab/model2vec)
