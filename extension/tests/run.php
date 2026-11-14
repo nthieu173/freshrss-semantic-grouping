@@ -459,6 +459,36 @@ function exerciseDatabase(SemanticGrouping_SemanticDatabase $database): PDO {
 	check($tagDao->labelsForEntry('200000000') === ['Single articles'], 'former group member did not move to singletons');
 	check($tagDao->labelsForEntry('300000000') === ['Renamed representative'], 'new group member retained a stale singleton assignment');
 
+	// The group is re-keyed when its representative changes to another article
+	// with the same title, such as a syndicated copy. The obsolete label still
+	// holds that name, so the new key must take it over instead of creating a
+	// second label with the same name, which FreshRSS rejects.
+	$rekeyedGeneration = $nextGeneration();
+	$database->activateGeneration($pdo, $rekeyedGeneration, 5, 'revision-rekeyed', $config, 10000, 250);
+	$pdo->exec('DELETE FROM group_members');
+	$pdo->exec('DELETE FROM groups');
+	$pdo->exec("INSERT INTO groups(group_id, representative_entry_id, selection_generation, grouping_fingerprint, generated_at)
+		VALUES ('group-rekeyed', '300000000', {$rekeyedGeneration}, '{$fingerprint}', 250)");
+	$pdo->exec("INSERT INTO group_members(group_id, entry_id) VALUES
+		('group-rekeyed', '300000000'), ('group-rekeyed', '200000000')");
+	$pdo->exec("UPDATE worker_state SET value='{$rekeyedGeneration}' WHERE key='last_published_generation'");
+	FreshRSS_Factory::$dao = new TestEntryDao([
+		new FreshRSS_Entry('Renamed representative', '100000000', 100),
+		new FreshRSS_Entry('Newest member', '200000000', 300),
+		new FreshRSS_Entry('Renamed representative', '300000000', 200),
+		new FreshRSS_Entry('Another singleton', '400000000', 400),
+		new FreshRSS_Entry('Last singleton', '500000000', 500),
+	]);
+	$reconciler = new SemanticGrouping_LabelReconciler($database, $tagDao, FreshRSS_Factory::$dao);
+	check($reconciler->reconcile(), 're-keyed group could not reuse the name of its obsolete label');
+	$rekeyed = $tagDao->labelByName('Renamed representative');
+	check($rekeyed !== null && $rekeyed['id'] === $groupLabel['id'], 're-keyed group did not take over the obsolete label');
+	check(($rekeyed['attributes'][SemanticGrouping_LabelReconciler::OWNER_ATTRIBUTE]['semantic_key'] ?? null) === 'group-rekeyed', 'adopted label kept its former semantic key');
+	check($tagDao->labelsForEntry('100000000') === ['Single articles'], 'former representative kept the re-keyed group label');
+	check($tagDao->labelsForEntry('200000000') === ['Renamed representative'], 're-keyed group member did not receive the label');
+	check($tagDao->labelsForEntry('300000000') === ['Renamed representative'], 'new representative did not receive the label');
+	$secondGeneration = $rekeyedGeneration;
+
 	$thirdGeneration = $database->allocateGeneration($pdo, 'query', 300);
 	$statement = $pdo->prepare('INSERT INTO candidate_members(generation, entry_id, source_hash) SELECT ?, entry_id, source_hash FROM candidate_members WHERE generation=?');
 	$statement->execute([$thirdGeneration, $secondGeneration]);

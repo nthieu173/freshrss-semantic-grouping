@@ -153,6 +153,30 @@ final class SemanticGrouping_LabelReconciler {
 				)));
 			}
 
+			// Every target that can be published keeps the label chosen for its
+			// key. Any other managed label is obsolete and is deleted after this
+			// pass, but it holds its name until then, and FreshRSS label names
+			// are unique. A target that needs that exact name takes the obsolete
+			// label over instead of creating one. This happens when the worker
+			// re-keys a group because its representative changed to another
+			// article with the same title.
+			$selectedLabels = [];
+			$selectedIds = [];
+			foreach ($targets as $key => $target) {
+				if (!isset($errors[$key])) {
+					$selectedLabels[$key] = self::selectOwnedLabel($ownedByKey[$key] ?? [], $snapshot['preferred_labels'][$key] ?? 0);
+					if ($selectedLabels[$key] !== null) {
+						$selectedIds[(int)$selectedLabels[$key]['id']] = true;
+					}
+				}
+			}
+			$obsoleteByName = [];
+			foreach ($ownedById as $labelId => $tag) {
+				if (!isset($selectedIds[$labelId])) {
+					$obsoleteByName[(string)$tag['name']] = $tag;
+				}
+			}
+
 			$currentAssignments = [];
 			foreach ($this->tagDao->selectEntryTag() as $row) {
 				$labelId = (int)$row['id_tag'];
@@ -173,7 +197,13 @@ final class SemanticGrouping_LabelReconciler {
 					continue;
 				}
 
-				$label = self::selectOwnedLabel($ownedByKey[$key] ?? [], $snapshot['preferred_labels'][$key] ?? 0);
+				$label = $selectedLabels[$key];
+				if (($label === null || (string)$label['name'] !== $target['name']) && isset($obsoleteByName[$target['name']])) {
+					// Ownership is rewritten for the new key below, and the
+					// label it replaces, if any, is retired as obsolete.
+					$label = $obsoleteByName[$target['name']];
+					unset($obsoleteByName[$target['name']]);
+				}
 				try {
 					if ($label === null) {
 						$labelId = $this->tagDao->addTag([
