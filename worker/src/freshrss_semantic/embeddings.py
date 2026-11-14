@@ -42,23 +42,30 @@ def embed(
     encoder_factory: Callable[[str], Encoder] = load_model,
 ) -> int:
     """Embed every missing or stale active input in short committed batches."""
+    # One connection for the phase; no transaction is open while encoding.
+    with store.session():
+        return _embed(store, encoder_factory)
+
+
+def _embed(store: SemanticStore, encoder_factory: Callable[[str], Encoder]) -> int:
     started = time.monotonic()
-    snapshot = store.load_snapshot()
-    store.require_live(snapshot)
     with store.connection() as db:
+        snapshot = store.load_snapshot(db)
+        store.require_live(snapshot)
         pending = store.pending_count(db, snapshot)
-    store.set_state("pending_embedding_count", str(pending))
-    store.set_state("last_attempted_embedding", str(int(time.time())))
+        now = str(int(time.time()))
+        state = {"pending_embedding_count": str(pending), "last_attempted_embedding": now}
+        if pending == 0:
+            state["last_successful_embedding"] = now
+        store.set_states(state, db)
     if pending == 0:
-        store.set_state("last_successful_embedding", str(int(time.time())))
         return 0
 
     encoder = encoder_factory(snapshot.config.embedding_model)
     completed = 0
     while True:
         with store.connection() as db:
-            store.assert_snapshot(db, snapshot)
-            batch = store.pending_inputs(db, snapshot, snapshot.config.embedding_batch_size)
+            batch = store.load_pending_batch(db, snapshot, snapshot.config.embedding_batch_size)
         if not batch:
             break
         texts = [item.embedding_text for item in batch]
@@ -78,8 +85,13 @@ def embed(
 
     with store.connection() as db:
         store.assert_snapshot(db, snapshot)
-    store.set_state("last_successful_embedding", str(int(time.time())))
-    store.set_state("pending_embedding_count", "0")
+        store.set_states(
+            {
+                "last_successful_embedding": str(int(time.time())),
+                "pending_embedding_count": "0",
+            },
+            db,
+        )
     LOGGER.info(
         "embedded entries=%d model=%s duration_seconds=%.3f peak_rss_mib=%.1f",
         completed,

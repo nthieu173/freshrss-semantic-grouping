@@ -3,9 +3,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import numpy as np
+from test_embeddings import assert_database_is_free
 
 from freshrss_semantic.grouping import UnexpectedEncoder, _semhash, group, groups_from_result
-from freshrss_semantic.semantic_store import GroupingInput
+from freshrss_semantic.semantic_store import GroupingInput, SemanticStore
 
 
 @dataclass
@@ -75,7 +76,7 @@ def test_title_deduplication_can_reduce_a_potential_group_to_a_singleton() -> No
     assert groups_from_result(result, inputs) == []
 
 
-def test_group_phase_publishes_only_after_all_embeddings_exist(populate) -> None:
+def test_group_phase_publishes_only_after_all_embeddings_exist(populate, monkeypatch) -> None:
     store = populate(entries=3)
     snapshot = store.load_snapshot()
     with store.connection() as db:
@@ -98,7 +99,22 @@ def test_group_phase_publishes_only_after_all_embeddings_exist(populate) -> None
                 ]
             )
 
-    assert group(store, lambda _vectors, _records: FakeSemHash()) == 1
+    connections = 0
+    real_connect = SemanticStore.connect
+
+    def counting_connect(self):
+        nonlocal connections
+        connections += 1
+        return real_connect(self)
+
+    def semhash(_vectors, _records):
+        # SemHash runs with no lock or transaction held.
+        assert_database_is_free(store.database)
+        return FakeSemHash()
+
+    monkeypatch.setattr(SemanticStore, "connect", counting_connect)
+    assert group(store, semhash) == 1
+    assert connections == 1
     assert store.get_state("last_published_generation") == "1"
 
 

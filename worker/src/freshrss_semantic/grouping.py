@@ -112,11 +112,20 @@ def group(
     semhash_factory: Callable[[NDArray[np.float32], list[dict[str, str]]], Any] = _semhash,
 ) -> int:
     """Compute all groups before atomically replacing the published mapping."""
+    # One connection for the phase; no transaction is open during SemHash.
+    with store.session():
+        return _group(store, semhash_factory)
+
+
+def _group(
+    store: SemanticStore,
+    semhash_factory: Callable[[NDArray[np.float32], list[dict[str, str]]], Any],
+) -> int:
     started = time.monotonic()
-    snapshot: PipelineSnapshot = store.load_snapshot()
-    store.require_live(snapshot)
-    store.set_state("last_attempted_group", str(int(time.time())))
     with store.connection() as db:
+        snapshot: PipelineSnapshot = store.load_snapshot(db)
+        store.require_live(snapshot)
+        store.set_state("last_attempted_group", str(int(time.time())), db)
         inputs = store.load_grouping_inputs(db, snapshot)
     if not inputs:
         groups: list[PublishedGroup] = []

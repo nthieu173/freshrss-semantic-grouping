@@ -12,6 +12,10 @@ class ConfigurationError(ValueError):
     """The producer published an invalid worker configuration."""
 
 
+class ConfigurationMissing(ConfigurationError):
+    """The producer has not published any worker configuration yet."""
+
+
 MINIMUM_GROUP_SIZE = 2
 GROUPING_FORMAT_VERSION = 2
 

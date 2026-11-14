@@ -21,8 +21,10 @@ without reacquiring it. Direct concurrent invocations exit without overlapping
 mutations.
 
 Before spawning work, `run` validates schema and configuration, then exits
-successfully when the pipeline is disabled, the producer lease expired, or the
-active generation already has current embeddings and published groups. The host
+successfully when the extension has not published a configuration yet, the
+pipeline is disabled, the producer lease expired, or the active generation
+already has current embeddings and published groups. It does these checks on
+one connection, which it closes before the first phase starts. The host
 invokes it every 10 minutes with a stable, randomized per-host offset of up to
 10 minutes, keeping successive checks exactly 10 minutes apart.
 
@@ -30,17 +32,29 @@ invokes it every 10 minutes with a stable, randomized per-host offset of up to
 
 The worker reads only `pipeline_config` from the semantic database: SQLite at
 the fixed path, or PostgreSQL when `SEMANTIC_DATABASE_URL` (or `--database`)
-is a `postgresql://` URL. Child phases receive that URL through the
-environment, never their command line. It
+is a `postgresql://` or `postgres://` URL. As in the extension, the scheme is
+matched in any letter case, and any `SEMANTIC_DATABASE_URL` that is not blank
+selects PostgreSQL: another scheme or a bare path there is a configuration
+error (exit status 2), never a SQLite path. A blank or whitespace-only value
+counts as unset. A `--database` value that looks like a URL with another scheme
+is refused the same way. Child phases receive the URL through the environment,
+never their command line. The worker
 validates database schema 3 and the published configuration, then snapshots the
 active generation and configuration revision. It rechecks both inside each
 write transaction that could affect a visible result.
 
-An absent database (or a PostgreSQL schema the extension has not created yet)
-is logged as not configured and treated as a successful no-op. An unknown
-schema, malformed configuration, or expired lease is reported safely. The
-worker never creates, migrates, renames, replaces, or deletes the shared
-database or its tables.
+An absent database (or a PostgreSQL schema the extension has not created yet),
+and a database the extension has created but not yet published a configuration
+into, are logged at informational level as not configured and treated as a
+successful no-op by every command, without recording an error. An unknown
+schema, malformed or incompatible configuration, or expired lease is reported
+safely. The worker never creates, migrates, renames, replaces, or deletes the
+shared database or its tables.
+
+Each phase reuses one validated connection for its state, reads and writes.
+Every statement or transaction on it ends before the next step, so between them
+it holds no lock and is never idle in a transaction. The PostgreSQL worker lock
+keeps its own connection.
 
 ## Embedding phase
 
@@ -49,9 +63,11 @@ article input and existing embedding. A row is pending when its vector is absent
 or its source/configuration fingerprint is stale.
 
 The phase loads Model2Vec once and processes canonical text in configurable
-batches, defaulting to 128 and capped at 256. Multiprocessing is disabled. Text
-encoding occurs outside a write transaction; each batch is upserted in a short
-transaction after verifying the generation and revision are still current.
+batches, defaulting to 128 and capped at 256. Multiprocessing is disabled. Each
+batch is read in a short read-only transaction that first rechecks the
+generation and revision. Text encoding occurs outside any transaction; each
+batch is then upserted in one statement inside a short write transaction after
+verifying the generation and revision are still current.
 
 Vectors are stored as contiguous little-endian float32 BLOBs with model,
 dimension, source hash, embedding fingerprint, and timestamp. Loading rejects a
@@ -64,7 +80,12 @@ source hash, and the next active-generation join marks it stale.
 
 Grouping loads only active entry IDs, received times, normalized titles, and
 current vectors. It requires a current vector for every candidate; missing or
-invalid input defers publication and retains the old groups.
+invalid input defers publication and retains the old groups. The candidate
+count and rows are read in one read-only transaction (`REPEATABLE READ` on
+PostgreSQL, a deferred transaction on SQLite) that first rechecks the
+generation and revision, so a producer switch or prune during the read aborts
+the phase as a snapshot change rather than reporting missing embeddings. It
+does not take the write lock.
 
 The worker passes a float32 matrix and minimal ID records to
 `SemHash.from_embeddings` with the USearch backend. Its protocol adapter raises
@@ -80,8 +101,9 @@ ID names the group. Publication stores only group identity, representative
 identity, and membership; it does not calculate member cosine similarities.
 
 All groups are computed before a write transaction starts. Publication rechecks
-the generation and revision, atomically replaces group and membership tables,
-and records the last published generation and successful run.
+the generation and revision, atomically replaces group and membership tables
+(one batched insert for the groups and one for all memberships), and records
+the last published generation and successful run.
 
 ## Cleanup and rebuild
 
@@ -118,7 +140,12 @@ the default runtime contract.
 - A failed or out-of-memory group phase leaves the prior group transaction
   untouched.
 - A generation/revision change aborts the phase before stale publication.
-- An absent semantic database is an informational, successful no-op.
+- A failed phase is reported by `run` with the error that phase recorded during
+  this run only; an older error is never shown in its place. A phase killed by
+  a signal, such as the out-of-memory killer's `SIGKILL`, is reported with the
+  signal's name.
+- An absent semantic database, or one without a published configuration yet,
+  is an informational, successful no-op.
 - Disabled or expired configuration is a successful no-op.
 - Error state is bounded and sanitized; failures never affect FreshRSS data or
   health.

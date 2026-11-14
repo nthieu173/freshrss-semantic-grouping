@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import numpy as np
 
 from freshrss_semantic.embeddings import embed
+from freshrss_semantic.semantic_store import SemanticStore, open_connection
 
 
 class FakeEncoder:
@@ -21,3 +24,43 @@ def test_embed_batches_and_repeat_run_is_idempotent(populate) -> None:
     assert [len(batch) for batch in encoder.batches] == [2, 2, 1]
     assert embed(store, lambda _model: (_ for _ in ()).throw(AssertionError("model loaded"))) == 0
     assert store.get_state("pending_embedding_count") == "0"
+
+
+def assert_database_is_free(database: str | Path) -> None:
+    """No lock or transaction of the worker's survives into computation."""
+    # A short timeout: a held shared or write lock fails this quickly.
+    writer = open_connection(database, busy_timeout_ms=100)
+    try:
+        writer.begin_write()
+        writer.execute("UPDATE pipeline_config SET updated_at = updated_at")
+        writer.commit()
+        if isinstance(database, str):
+            idle = writer.execute(
+                "SELECT COUNT(*) FROM pg_stat_activity"
+                " WHERE datname = current_database() AND state LIKE 'idle in transaction%'"
+            ).fetchone()[0]
+            assert idle == 0
+    finally:
+        writer.close()
+
+
+def test_embed_phase_uses_one_connection_and_encodes_outside_transactions(
+    populate, database, monkeypatch
+) -> None:
+    store = populate(entries=5)
+    connections = 0
+    real_connect = SemanticStore.connect
+
+    def counting_connect(self):
+        nonlocal connections
+        connections += 1
+        return real_connect(self)
+
+    class CheckingEncoder(FakeEncoder):
+        def encode(self, sentences, **kwargs):
+            assert_database_is_free(database)
+            return super().encode(sentences, **kwargs)
+
+    monkeypatch.setattr(SemanticStore, "connect", counting_connect)
+    assert embed(store, lambda _model: CheckingEncoder()) == 5
+    assert connections == 1

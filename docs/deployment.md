@@ -59,9 +59,10 @@ example, an 8-minute, 42-second offset produces `:08:42`, `:18:42`, and
 `:28:42`, rather than varying the gap between runs.
 
 `run` exits successfully without child processes when the semantic database
-does not exist yet, the pipeline is disabled, the producer lease is expired,
-the active generation has no pending work, or another worker owns the advisory
-lock. An absent database is logged at informational level as not configured.
+does not exist yet, the extension has not published a configuration yet, the
+pipeline is disabled, the producer lease is expired, the active generation has
+no pending work, or another worker owns the advisory lock. An absent database
+or configuration is logged at informational level as not configured.
 
 ## PostgreSQL storage
 

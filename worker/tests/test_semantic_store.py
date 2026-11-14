@@ -10,12 +10,14 @@ import pytest
 from conftest import get_schema_version, raw, set_schema_version
 
 from freshrss_semantic.semantic_store import (
+    Connection,
     IncompleteEmbeddings,
     PublishedGroup,
     SchemaVersionError,
     SemanticStore,
     SnapshotChanged,
     StoreError,
+    open_connection,
 )
 
 
@@ -156,3 +158,138 @@ def test_invalid_json_does_not_change_existing_groups(populate) -> None:
     )
     with pytest.raises(ValueError):
         store.load_snapshot()
+
+
+def _switch_generation(database: str | Path, busy_timeout_ms: int = 5000) -> None:
+    """What the exporter does: activate a new generation, then prune the old one."""
+    connection = open_connection(database, busy_timeout_ms)
+    try:
+        connection.begin_write()
+        try:
+            connection.execute("INSERT INTO candidate_generations VALUES (2, 'query-v1', 1, 1, 0)")
+            connection.execute("UPDATE pipeline_config SET active_generation = 2")
+            connection.execute("DELETE FROM candidate_generations WHERE generation = 1")
+        except BaseException:
+            connection.rollback()
+            raise
+        connection.commit()
+    finally:
+        connection.close()
+
+
+class _ProducerBetweenReads:
+    """A connection that lets the producer commit right after the candidate count."""
+
+    def __init__(self, connection: Connection, database: str | Path) -> None:
+        self.connection = connection
+        self.database = database
+        self.producer_error: BaseException | None = None
+
+    def __getattr__(self, name: str):
+        return getattr(self.connection, name)
+
+    def execute(self, sql: str, parameters=()):
+        cursor = self.connection.execute(sql, parameters)
+        if sql.startswith("SELECT COUNT(*) FROM candidate_members"):
+            try:
+                _switch_generation(self.database, busy_timeout_ms=100)
+            except (sqlite3.OperationalError, psycopg.errors.LockNotAvailable) as error:
+                self.producer_error = error
+        return cursor
+
+
+def test_grouping_inputs_are_one_consistent_read(populate, database) -> None:
+    store = populate(entries=2)
+    snapshot = store.load_snapshot()
+    with store.connection() as db:
+        pending = store.pending_inputs(db, snapshot, 2)
+    store.store_embeddings(snapshot, pending, np.ones((2, 2), dtype=np.float32))
+
+    with store.connection() as db:
+        racing = _ProducerBetweenReads(db, database)
+        # Never a false "still need embeddings" from mixing two states.
+        inputs = store.load_grouping_inputs(racing, snapshot)
+    assert len(inputs) == 2
+    if isinstance(database, Path):
+        # SQLite: the read's shared lock holds the producer's commit back.
+        assert isinstance(racing.producer_error, sqlite3.OperationalError)
+        _switch_generation(database)
+    else:
+        # PostgreSQL: the producer committed, unseen by the snapshot read.
+        assert racing.producer_error is None
+    with store.connection() as db, pytest.raises(SnapshotChanged):
+        store.load_grouping_inputs(db, snapshot)
+
+
+def test_publication_writes_are_batched(populate) -> None:
+    store = populate(entries=2)
+    snapshot = store.load_snapshot()
+    statements: list[tuple[str, str, int]] = []
+
+    with store.session():
+        real = store._session
+
+        class Recording:
+            def __getattr__(self, name: str):
+                return getattr(real, name)
+
+            def execute(self, sql: str, parameters=()):
+                statements.append(("execute", " ".join(sql.split())[:30], 1))
+                return real.execute(sql, parameters)
+
+            def executemany(self, sql: str, rows):
+                statements.append(("executemany", " ".join(sql.split())[:30], len(rows)))
+                return real.executemany(sql, rows)
+
+        store._session = Recording()
+        with store.connection() as db:
+            pending = store.pending_inputs(db, snapshot, 2)
+        store.store_embeddings(snapshot, pending, np.ones((2, 2), dtype=np.float32))
+        store.publish_groups(
+            snapshot,
+            [
+                PublishedGroup("a", "1", ("1", "2", "3")),
+                PublishedGroup("b", "4", ("4", "5")),
+            ],
+        )
+        store._session = real
+
+    inserts = [entry for entry in statements if "INSERT" in entry[1]]
+    assert inserts == [
+        ("executemany", "INSERT INTO embeddings( entry_", 2),
+        ("executemany", "INSERT INTO groups( group_id, ", 2),
+        ("executemany", "INSERT INTO group_members(grou", 5),
+        ("executemany", "INSERT INTO worker_state(key, ", 5),
+    ]
+    assert raw(store.database, "SELECT group_id, entry_id FROM group_members ORDER BY 1, 2") == [
+        ("a", "1"),
+        ("a", "2"),
+        ("a", "3"),
+        ("b", "4"),
+        ("b", "5"),
+    ]
+    assert store.state_dict()["current_group_count"] == "2"
+
+
+def test_session_reuses_one_validated_connection(populate, monkeypatch) -> None:
+    store = populate(entries=1)
+    opened: list[Connection] = []
+    real_connect = SemanticStore.connect
+
+    def counting_connect(self):
+        opened.append(real_connect(self))
+        return opened[-1]
+
+    monkeypatch.setattr(SemanticStore, "connect", counting_connect)
+    with store.session():
+        snapshot = store.load_snapshot()
+        store.set_state("key", "value")
+        assert store.get_state("key") == "value"
+        with store.session(), store.connection() as db:
+            assert store.pending_count(db, snapshot) == 1
+    assert len(opened) == 1
+    # Closed with the session.
+    with pytest.raises((sqlite3.ProgrammingError, psycopg.OperationalError)):
+        opened[0].execute("SELECT 1")
+    assert store.get_state("key") == "value"
+    assert len(opened) == 2

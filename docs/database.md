@@ -3,10 +3,12 @@
 By default the database is SQLite at the fixed path
 `/semantic-data/semantic.sqlite`. Setting `SEMANTIC_DATABASE_URL` to a
 `postgresql://` URL in both the FreshRSS and worker environments moves it to
-PostgreSQL instead (see [PostgreSQL](#postgresql)). No browser parameter can
-change either. The extension creates and migrates the database; the worker
-validates schema version 3 and refuses to migrate, rename, delete, or replace an
-unknown database.
+PostgreSQL instead (see [PostgreSQL](#postgresql)). Any value that is not blank
+after trimming whitespace selects PostgreSQL; its scheme must be `postgresql`
+or `postgres` (in any letter case), and any other scheme is an error rather than
+a fallback to SQLite. No browser parameter can change either. The extension
+creates and migrates the database; the worker validates schema version 3 and
+refuses to migrate, rename, delete, or replace an unknown database.
 
 All connections enable foreign keys, use rollback journaling, wait at most five
 seconds for a lock, and keep write transactions short. Encoding and SemHash

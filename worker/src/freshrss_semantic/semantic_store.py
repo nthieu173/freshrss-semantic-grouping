@@ -1,8 +1,9 @@
 """Shared-database access with generation/revision compare-before-publish semantics.
 
 The database is SQLite at a path, or PostgreSQL when given a ``postgresql://``
-URL. SQL is written once with ``?`` placeholders; the PostgreSQL connection
-translates them.
+(or ``postgres://``) URL, the scheme matched case-insensitively as the
+extension does. SQL is written once with ``?`` placeholders; the PostgreSQL
+connection translates them.
 """
 
 from __future__ import annotations
@@ -12,7 +13,7 @@ import json
 import re
 import sqlite3
 import time
-from collections.abc import Callable, Iterator, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -23,10 +24,12 @@ import psycopg
 from numpy.typing import NDArray
 from psycopg.conninfo import conninfo_to_dict, make_conninfo
 
-from .config import ConfigurationError, PipelineSnapshot, WorkerConfig
+from .config import ConfigurationError, ConfigurationMissing, PipelineSnapshot, WorkerConfig
 
 DATABASE_SCHEMA_VERSION = 3
-POSTGRES_SCHEMES = ("postgres://", "postgresql://")
+# The extension accepts either scheme in any letter case; libpq itself only
+# recognises the lowercase prefixes, so URLs are normalised before connecting.
+_POSTGRES_SCHEME = re.compile(r"^postgres(?:ql)?://", re.IGNORECASE)
 WORKER_LOCK = "semantic-worker"
 # Serializes PostgreSQL writers the way SQLite's BEGIN IMMEDIATE does, so a
 # compare-before-publish check stays valid until its commit.
@@ -56,6 +59,10 @@ class SchemaVersionError(StoreError):
     """The database is absent or belongs to another paired release."""
 
 
+class DatabaseMissing(SchemaVersionError):
+    """The extension has not created the database (or PostgreSQL schema) yet."""
+
+
 class SnapshotChanged(StoreError):
     """The producer changed generation or configuration during a phase."""
 
@@ -66,7 +73,12 @@ class IncompleteEmbeddings(StoreError):
 
 def is_postgres(database: str | Path) -> bool:
     """Whether ``database`` names a PostgreSQL server rather than a SQLite file."""
-    return isinstance(database, str) and database.startswith(POSTGRES_SCHEMES)
+    return isinstance(database, str) and _POSTGRES_SCHEME.match(database) is not None
+
+
+def postgres_url(url: str) -> str:
+    """``url`` with its scheme lowercased, the only spelling libpq parses."""
+    return _POSTGRES_SCHEME.sub(lambda match: match.group(0).lower(), url, count=1)
 
 
 def lock_key(name: str) -> int:
@@ -95,6 +107,8 @@ class Connection(Protocol):
 
     def begin_write(self) -> None: ...
 
+    def begin_read(self) -> None: ...
+
     def commit(self) -> None: ...
 
     def rollback(self) -> None: ...
@@ -118,6 +132,11 @@ class _SqliteConnection:
 
     def begin_write(self) -> None:
         self.raw.execute("BEGIN IMMEDIATE")
+
+    def begin_read(self) -> None:
+        # Deferred: the shared lock taken by the first read keeps every later
+        # read in the transaction on the same committed state.
+        self.raw.execute("BEGIN")
 
     def commit(self) -> None:
         self.raw.commit()
@@ -155,9 +174,12 @@ def _row_factory(cursor: psycopg.Cursor[Any]) -> Callable[[Sequence[Any]], _Row]
 
 class _PostgresConnection:
     def __init__(self, url: str, busy_timeout_ms: int) -> None:
+        url = postgres_url(url)
         settings = {} if "connect_timeout" in conninfo_to_dict(url) else {"connect_timeout": 5}
         self.raw: psycopg.Connection[Any] = psycopg.connect(
-            make_conninfo(url, **settings), autocommit=True, row_factory=_row_factory
+            make_conninfo(url, **settings),
+            autocommit=True,
+            row_factory=_row_factory,
         )
         # The same bound SQLite's busy timeout gives a waiting writer.
         self.raw.execute(f"SET lock_timeout = {int(busy_timeout_ms)}")
@@ -183,6 +205,10 @@ class _PostgresConnection:
         except BaseException:
             self.raw.execute(b"ROLLBACK")
             raise
+
+    def begin_read(self) -> None:
+        # No write lock: a read-only snapshot never blocks the writers.
+        self.raw.execute(b"BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY")
 
     def commit(self) -> None:
         self.raw.execute(b"COMMIT")
@@ -247,8 +273,9 @@ class SemanticStore:
 
     def __init__(self, database: str | Path, busy_timeout_ms: int = 5000) -> None:
         self.postgres = is_postgres(database)
-        self.database: str | Path = str(database) if self.postgres else Path(database)
+        self.database: str | Path = postgres_url(str(database)) if self.postgres else Path(database)
         self.busy_timeout_ms = busy_timeout_ms
+        self._session: Connection | None = None
 
     def exists(self) -> bool:
         """Whether the extension has created the database yet."""
@@ -263,12 +290,12 @@ class SemanticStore:
     def connect(self) -> Connection:
         """Open an existing database and validate its release schema."""
         if not self.postgres and not Path(self.database).is_file():
-            raise SchemaVersionError("semantic database does not exist")
+            raise DatabaseMissing("semantic database does not exist")
         connection = open_connection(self.database, self.busy_timeout_ms)
         try:
             version = schema_version(connection, self.postgres)
             if version == 0 and self.postgres:
-                raise SchemaVersionError("semantic database does not exist")
+                raise DatabaseMissing("semantic database does not exist")
             if version != DATABASE_SCHEMA_VERSION:
                 raise SchemaVersionError(
                     "unsupported semantic database schema "
@@ -290,8 +317,29 @@ class SemanticStore:
         return connection
 
     @contextmanager
+    def session(self) -> Iterator[None]:
+        """Share one validated connection among every operation in this block.
+
+        Each operation still opens and closes its own transaction, so between
+        them the connection is idle (never idle in a transaction) and holds no
+        lock. Nested sessions reuse the outer one.
+        """
+        if self._session is not None:
+            yield
+            return
+        self._session = self.connect()
+        try:
+            yield
+        finally:
+            connection, self._session = self._session, None
+            connection.close()
+
+    @contextmanager
     def connection(self) -> Iterator[Connection]:
-        """Yield a validated connection and always release its file handle."""
+        """Yield the session's connection, or a new validated one closed afterwards."""
+        if self._session is not None:
+            yield self._session
+            return
         connection = self.connect()
         try:
             yield connection
@@ -309,11 +357,19 @@ class SemanticStore:
         else:
             connection.commit()
 
+    @contextmanager
+    def read_transaction(self, connection: Connection) -> Iterator[None]:
+        """Read one consistent committed state without taking the write lock."""
+        connection.begin_read()
+        try:
+            yield
+        finally:
+            # Nothing to keep; ending it promptly releases SQLite's shared lock.
+            connection.rollback()
+
     def load_snapshot(self, connection: Connection | None = None) -> PipelineSnapshot:
         """Load and validate the active producer configuration."""
-        owned = connection is None
-        db = connection or self.connect()
-        try:
+        with self._use(connection) as db:
             row = db.execute(
                 """
                 SELECT database_schema_version, config_revision, active_generation,
@@ -322,7 +378,7 @@ class SemanticStore:
                 """
             ).fetchone()
             if row is None:
-                raise ConfigurationError("the extension has not published a configuration")
+                raise ConfigurationMissing("the extension has not published a configuration")
             if int(row["database_schema_version"]) != DATABASE_SCHEMA_VERSION:
                 raise SchemaVersionError(
                     "pipeline configuration has an incompatible schema version"
@@ -339,9 +395,14 @@ class SemanticStore:
                 updated_at=int(row["updated_at"]),
                 config=config,
             )
-        finally:
-            if owned:
-                db.close()
+
+    @contextmanager
+    def _use(self, connection: Connection | None) -> Iterator[Connection]:
+        if connection is not None:
+            yield connection
+        else:
+            with self.connection() as db:
+                yield db
 
     @staticmethod
     def require_live(snapshot: PipelineSnapshot, now: int | None = None) -> None:
@@ -365,19 +426,17 @@ class SemanticStore:
             raise SnapshotChanged("active candidate generation or configuration changed")
 
     def set_state(self, key: str, value: str, connection: Connection | None = None) -> None:
-        owned = connection is None
-        db = connection or self.connect()
-        try:
-            db.execute(
+        self.set_states({key: value}, connection)
+
+    def set_states(self, values: Mapping[str, str], connection: Connection | None = None) -> None:
+        with self._use(connection) as db:
+            db.executemany(
                 """
                 INSERT INTO worker_state(key, value) VALUES (?, ?)
                 ON CONFLICT(key) DO UPDATE SET value = excluded.value
                 """,
-                (key, value),
+                list(values.items()),
             )
-        finally:
-            if owned:
-                db.close()
 
     def get_state(self, key: str, default: str = "") -> str:
         with self.connection() as db:
@@ -387,10 +446,14 @@ class SemanticStore:
     def record_error(self, phase: str, error: BaseException) -> None:
         try:
             with self.connection() as db, self.transaction(db):
-                now = str(int(time.time()))
-                self.set_state("latest_error", _safe_error(error), db)
-                self.set_state("latest_error_phase", phase, db)
-                self.set_state("latest_error_at", now, db)
+                self.set_states(
+                    {
+                        "latest_error": _safe_error(error),
+                        "latest_error_phase": phase,
+                        "latest_error_at": str(int(time.time())),
+                    },
+                    db,
+                )
         except (sqlite3.Error, psycopg.Error, StoreError, ConfigurationError):
             pass
 
@@ -446,59 +509,75 @@ class SemanticStore:
         if not np.isfinite(matrix).all():
             raise ValueError("encoder returned a non-finite embedding")
         now = int(time.time())
+        # Serialized before the write transaction so it stays as short as possible.
+        rows = [
+            (
+                item.entry_id,
+                item.source_hash,
+                snapshot.config.embedding_fingerprint,
+                snapshot.config.embedding_model,
+                int(vector.shape[0]),
+                vector.astype("<f4", copy=False).tobytes(order="C"),
+                now,
+            )
+            for item, vector in zip(inputs, matrix, strict=True)
+        ]
         with self.connection() as db, self.transaction(db):
             self.assert_snapshot(db, snapshot)
-            for item, vector in zip(inputs, matrix, strict=True):
-                db.execute(
-                    """
-                    INSERT INTO embeddings(
-                        entry_id, source_hash, embedding_fingerprint, model_id,
-                        dimensions, embedding, embedded_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
-                    ON CONFLICT(entry_id) DO UPDATE SET
-                        source_hash = excluded.source_hash,
-                        embedding_fingerprint = excluded.embedding_fingerprint,
-                        model_id = excluded.model_id,
-                        dimensions = excluded.dimensions,
-                        embedding = excluded.embedding,
-                        embedded_at = excluded.embedded_at
-                    """,
-                    (
-                        item.entry_id,
-                        item.source_hash,
-                        snapshot.config.embedding_fingerprint,
-                        snapshot.config.embedding_model,
-                        int(vector.shape[0]),
-                        vector.astype("<f4", copy=False).tobytes(order="C"),
-                        now,
-                    ),
-                )
+            db.executemany(
+                """
+                INSERT INTO embeddings(
+                    entry_id, source_hash, embedding_fingerprint, model_id,
+                    dimensions, embedding, embedded_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(entry_id) DO UPDATE SET
+                    source_hash = excluded.source_hash,
+                    embedding_fingerprint = excluded.embedding_fingerprint,
+                    model_id = excluded.model_id,
+                    dimensions = excluded.dimensions,
+                    embedding = excluded.embedding,
+                    embedded_at = excluded.embedded_at
+                """,
+                rows,
+            )
+
+    def load_pending_batch(
+        self, connection: Connection, snapshot: PipelineSnapshot, limit: int
+    ) -> list[PendingInput]:
+        """The next pending inputs, read from the snapshot's own generation."""
+        with self.read_transaction(connection):
+            self.assert_snapshot(connection, snapshot)
+            return self.pending_inputs(connection, snapshot, limit)
 
     def load_grouping_inputs(
         self, connection: Connection, snapshot: PipelineSnapshot
     ) -> list[GroupingInput]:
-        candidate_count = int(
-            connection.execute(
-                "SELECT COUNT(*) FROM candidate_members WHERE generation = ?",
-                (snapshot.active_generation,),
-            ).fetchone()[0]
-        )
-        rows = connection.execute(
-            """
-            SELECT cm.entry_id, ai.received_at, cm.normalized_title,
-                   e.dimensions, e.embedding
-              FROM candidate_members AS cm
-              JOIN article_inputs AS ai
-                ON ai.entry_id = cm.entry_id AND ai.source_hash = cm.source_hash
-              JOIN embeddings AS e
-                ON e.entry_id = cm.entry_id
-               AND e.source_hash = cm.source_hash
-               AND e.embedding_fingerprint = ?
-             WHERE cm.generation = ?
-             ORDER BY ai.received_at, cm.entry_id
-            """,
-            (snapshot.config.embedding_fingerprint, snapshot.active_generation),
-        ).fetchall()
+        # One read transaction: a producer switch or prune between the count
+        # and the rows surfaces as SnapshotChanged, never a false shortfall.
+        with self.read_transaction(connection):
+            self.assert_snapshot(connection, snapshot)
+            candidate_count = int(
+                connection.execute(
+                    "SELECT COUNT(*) FROM candidate_members WHERE generation = ?",
+                    (snapshot.active_generation,),
+                ).fetchone()[0]
+            )
+            rows = connection.execute(
+                """
+                SELECT cm.entry_id, ai.received_at, cm.normalized_title,
+                       e.dimensions, e.embedding
+                  FROM candidate_members AS cm
+                  JOIN article_inputs AS ai
+                    ON ai.entry_id = cm.entry_id AND ai.source_hash = cm.source_hash
+                  JOIN embeddings AS e
+                    ON e.entry_id = cm.entry_id
+                   AND e.source_hash = cm.source_hash
+                   AND e.embedding_fingerprint = ?
+                 WHERE cm.generation = ?
+                 ORDER BY ai.received_at, cm.entry_id
+                """,
+                (snapshot.config.embedding_fingerprint, snapshot.active_generation),
+            ).fetchall()
         if len(rows) != candidate_count:
             raise IncompleteEmbeddings(
                 f"{candidate_count - len(rows)} active candidates still need embeddings"
@@ -522,35 +601,43 @@ class SemanticStore:
 
     def publish_groups(self, snapshot: PipelineSnapshot, groups: Sequence[PublishedGroup]) -> None:
         now = int(time.time())
+        group_rows = [
+            (
+                group.group_id,
+                group.representative_entry_id,
+                snapshot.active_generation,
+                snapshot.config.grouping_fingerprint,
+                now,
+            )
+            for group in groups
+        ]
+        member_rows = [(group.group_id, entry_id) for group in groups for entry_id in group.members]
         with self.connection() as db, self.transaction(db):
             self.assert_snapshot(db, snapshot)
             db.execute("DELETE FROM group_members")
             db.execute("DELETE FROM groups")
-            for group in groups:
-                db.execute(
-                    """
-                    INSERT INTO groups(
-                        group_id, representative_entry_id, selection_generation,
-                        grouping_fingerprint, generated_at
-                    ) VALUES (?, ?, ?, ?, ?)
-                    """,
-                    (
-                        group.group_id,
-                        group.representative_entry_id,
-                        snapshot.active_generation,
-                        snapshot.config.grouping_fingerprint,
-                        now,
-                    ),
-                )
-                db.executemany(
-                    "INSERT INTO group_members(group_id, entry_id) VALUES (?, ?)",
-                    [(group.group_id, entry_id) for entry_id in group.members],
-                )
-            self.set_state("last_published_generation", str(snapshot.active_generation), db)
-            self.set_state("last_successful_group", str(now), db)
-            self.set_state("current_group_count", str(len(groups)), db)
-            self.set_state("current_grouping_fingerprint", snapshot.config.grouping_fingerprint, db)
-            self.set_state("latest_error", "", db)
+            db.executemany(
+                """
+                INSERT INTO groups(
+                    group_id, representative_entry_id, selection_generation,
+                    grouping_fingerprint, generated_at
+                ) VALUES (?, ?, ?, ?, ?)
+                """,
+                group_rows,
+            )
+            db.executemany(
+                "INSERT INTO group_members(group_id, entry_id) VALUES (?, ?)", member_rows
+            )
+            self.set_states(
+                {
+                    "last_published_generation": str(snapshot.active_generation),
+                    "last_successful_group": str(now),
+                    "current_group_count": str(len(groups)),
+                    "current_grouping_fingerprint": snapshot.config.grouping_fingerprint,
+                    "latest_error": "",
+                },
+                db,
+            )
 
     def cleanup_orphan_embeddings(self) -> int:
         with self.connection() as db, self.transaction(db):
