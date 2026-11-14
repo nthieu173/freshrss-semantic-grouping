@@ -24,9 +24,13 @@ worker never reads FreshRSS configuration files.
 Exact-title filtering is synchronous and independent of the semantic pipeline
 switch. On the first hook invocation in a refresh process, the filter loads all
 currently retained titles through FreshRSS's DAO and builds a normalized hash
-set. Before each admission decision it also loads titles from FreshRSS's
+set. Before each admission decision it also reads titles from FreshRSS's
 temporary-entry table, where accepted entries wait for the surrounding feed
-actualization to commit. For each incoming entry it:
+actualization to commit. It re-reads every staged row rather than only rows
+above the highest ID it has seen, because entry IDs come from the clock before
+the hook runs and another request can stage a lower ID later. Only staged raw
+titles it has not seen before are normalized, so a refresh does not repeat the
+normalization for each new entry. For each incoming entry it:
 
 1. HTML-decodes and Unicode-normalizes the title;
 2. uses PHP Intl's ICU transliterator to canonicalize Unicode quotation marks;

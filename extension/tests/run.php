@@ -77,6 +77,10 @@ final class TestTagDao {
 	/** @var array<string,array<int,bool>> */
 	public array $assignments = [];
 	private int $nextId = 1;
+	/** Called after each successful attribute update, as a label write. */
+	public ?Closure $afterAttributes = null;
+	/** Called before every label listing. */
+	public ?Closure $beforeSelectAll = null;
 
 	/** @param array{name:string,attributes?:mixed} $values */
 	public function addTag(array $values): int|false {
@@ -90,7 +94,12 @@ final class TestTagDao {
 		return $id;
 	}
 	/** @return Traversable<array{id:int,name:string,attributes:mixed}> */
-	public function selectAll(): Traversable { yield from array_values($this->tags); }
+	public function selectAll(): Traversable {
+		if ($this->beforeSelectAll !== null) {
+			($this->beforeSelectAll)();
+		}
+		yield from array_values($this->tags);
+	}
 	/** @return Traversable<array{id_tag:int,id_entry:string}> */
 	public function selectEntryTag(): Traversable {
 		foreach ($this->assignments as $entryId => $labels) {
@@ -117,6 +126,9 @@ final class TestTagDao {
 			return false;
 		}
 		$this->tags[$id]['attributes'] = $attributes;
+		if ($this->afterAttributes !== null) {
+			($this->afterAttributes)();
+		}
 		return 1;
 	}
 	public function deleteTag(int $id): int|false {
@@ -235,6 +247,29 @@ check(
 	'entry staged after filter initialization was accepted',
 );
 
+// Staged titles are re-read on every call, but each raw title is normalized
+// once. Rows staged out of id order by another request are still seen,
+// because the filter does not bound the read by the highest id it has seen.
+$normalized = [];
+$countingNormalizer = static function (string $title) use (&$normalized): string {
+	$normalized[] = $title;
+	return SemanticGrouping_TextNormalizer::title($title);
+};
+$stagingDao = new TestEntryDao([new FreshRSS_Entry('Retained title')], ['Staged one', 'Staged two']);
+FreshRSS_Factory::$dao = $stagingDao;
+$filter = new SemanticGrouping_ExactTitleFilter($countingNormalizer);
+for ($index = 0; $index < 20; $index++) {
+	$entry = new FreshRSS_Entry("Fresh title {$index}");
+	check($filter->filter($entry) === $entry, 'distinct staged-batch title was rejected');
+	$stagingDao->pendingTitles[] = "Fresh title {$index}";
+}
+array_unshift($stagingDao->pendingTitles, 'Late lower-id title');
+check($filter->filter(new FreshRSS_Entry('LATE lower-id title')) === null, 'title staged with a lower id by another request was accepted');
+check($filter->filter(new FreshRSS_Entry('staged TWO')) === null, 'initially staged title was forgotten');
+// 1 retained + 2 initially staged + 20 own + 1 late staged, plus one
+// normalization of each of the 22 incoming entries.
+check(count($normalized) === 1 + 2 + 20 + 1 + 22, 'staged titles were normalized again on every call: ' . count($normalized));
+
 if (class_exists('Transliterator')) {
 	FreshRSS_Factory::$dao = new TestEntryDao([new FreshRSS_Entry("Organizer behind \u{2018}moth\u{2019} demonstrations")]);
 	$filter = new SemanticGrouping_ExactTitleFilter();
@@ -336,12 +371,24 @@ function exerciseDatabase(SemanticGrouping_SemanticDatabase $database): PDO {
 	$tagDao = new TestTagDao();
 	$personalId = $tagDao->addTag(['name' => 'Personal']);
 	check(is_int($personalId), 'personal label fixture was not created');
+	// Two owned labels for one key: managed_labels picks the newer one,
+	// which already has the right name, over the older one.
+	$groupOwnership = [SemanticGrouping_LabelReconciler::OWNER_ATTRIBUTE => [
+		'owner' => SemanticGrouping_LabelReconciler::OWNER_ID, 'semantic_key' => 'group-a',
+	]];
+	$staleCopyId = $tagDao->addTag(['name' => 'Stale copy', 'attributes' => $groupOwnership]);
+	$preferredId = $tagDao->addTag(['name' => 'Old representative', 'attributes' => $groupOwnership]);
+	check(is_int($staleCopyId) && is_int($preferredId) && $staleCopyId < $preferredId, 'duplicate owned label fixture was not created');
+	$pdo->prepare("INSERT INTO managed_labels(semantic_key, label_id, label_name, selection_generation, updated_at) VALUES ('group-a', ?, 'Old representative', 0, 0)")
+		->execute([$preferredId]);
 	FreshRSS_Factory::$tagDao = $tagDao;
 	$reconciler = new SemanticGrouping_LabelReconciler($database, $tagDao, FreshRSS_Factory::$dao);
 	check($reconciler->reconcile(), 'initial native label reconciliation failed');
 	$groupLabel = $tagDao->labelByName('Old representative');
 	$singleLabel = $tagDao->labelByName('Single articles');
 	check($groupLabel !== null && $singleLabel !== null, 'semantic labels were not created');
+	check($groupLabel['id'] === $preferredId, 'the label recorded in managed_labels was not preferred');
+	check($tagDao->labelByName('Stale copy') === null, 'the duplicate owned label was not retired');
 	check($tagDao->labelsForEntry('100000000') === ['Old representative'], 'representative did not receive its group label');
 	check($tagDao->labelsForEntry('200000000') === ['Old representative'], 'group member did not receive its group label');
 	check($tagDao->labelsForEntry('300000000') === ['Single articles'], 'singleton did not receive the singleton label');
@@ -351,6 +398,21 @@ function exerciseDatabase(SemanticGrouping_SemanticDatabase $database): PDO {
 	check((int)$pdo->query('SELECT COUNT(*) FROM managed_labels')->fetchColumn() === 2, 'managed label ownership was not persisted');
 	$status = (new SemanticGrouping_GroupRepository($database))->status();
 	check(empty($status['label_sync_pending']), 'completed label synchronization remained pending');
+
+	// The published groups and their members are read in one query, ordered
+	// by group and then entry, keeping a group without members.
+	$pdo->exec("INSERT INTO groups(group_id, representative_entry_id, selection_generation, grouping_fingerprint, generated_at)
+		VALUES ('group-b', '400000000', {$generation}, '{$fingerprint}', 100), ('group-0', '500000000', {$generation}, '{$fingerprint}', 100)");
+	$pdo->exec("INSERT INTO group_members(group_id, entry_id) VALUES ('group-b', '400000000'), ('group-b', '300000000')");
+	$snapshot = (new ReflectionMethod($reconciler, 'publishedSnapshot'))->invoke($reconciler);
+	check(is_array($snapshot) && $snapshot['groups'] === [
+		['group_id' => 'group-0', 'representative_entry_id' => '500000000', 'members' => []],
+		['group_id' => 'group-a', 'representative_entry_id' => '100000000', 'members' => ['100000000', '200000000']],
+		['group_id' => 'group-b', 'representative_entry_id' => '400000000', 'members' => ['300000000', '400000000']],
+	], 'published groups were not read as ordered groups with their members');
+	check($snapshot['candidate_ids'] === ['100000000', '200000000', '300000000', '400000000', '500000000'], 'published candidates were not read in order');
+	check($snapshot['preferred_labels'] === ['group-a' => $preferredId, 'single-articles' => $singleLabel['id']], 'managed label mapping was not read with the publication');
+	$pdo->exec("DELETE FROM groups WHERE group_id IN ('group-b', 'group-0')");
 
 	$nextGeneration = static function () use ($database, $pdo, $generation): int {
 		$next = $database->allocateGeneration($pdo, 'query', 200);
@@ -375,7 +437,23 @@ function exerciseDatabase(SemanticGrouping_SemanticDatabase $database): PDO {
 		new FreshRSS_Entry('Last singleton', '500000000', 500),
 	]);
 	$reconciler = new SemanticGrouping_LabelReconciler($database, $tagDao, FreshRSS_Factory::$dao);
+	// Make the database unopenable between the first label write and the
+	// final status write: reconciliation must not reopen it for each group.
+	$setVersion = static function (int $version) use ($pdo): void {
+		$pdo->exec($pdo->getAttribute(PDO::ATTR_DRIVER_NAME) === 'pgsql'
+			? "UPDATE schema_version SET version = {$version}"
+			: "PRAGMA user_version = {$version}");
+	};
+	$tagDao->afterAttributes = static function () use ($setVersion, $tagDao): void {
+		$setVersion(99);
+		$tagDao->afterAttributes = null;
+		$tagDao->beforeSelectAll = static function () use ($setVersion, $tagDao): void {
+			$setVersion(3);
+			$tagDao->beforeSelectAll = null;
+		};
+	};
 	check($reconciler->reconcile(), 'membership-change reconciliation failed');
+	check($tagDao->afterAttributes === null && $tagDao->beforeSelectAll === null, 'label-write probe did not run');
 	$renamed = $tagDao->labelByName('Renamed representative');
 	check($renamed !== null && $renamed['id'] === $groupLabel['id'], 'existing group label was not renamed in place');
 	check($tagDao->labelsForEntry('200000000') === ['Single articles'], 'former group member did not move to singletons');
@@ -480,6 +558,32 @@ check((int)$versionTwoPdo->query('SELECT producer_lease_until FROM pipeline_conf
 check($versionTwoPdo->query("SELECT COUNT(*) FROM export_state WHERE key='last_export_success'")->fetchColumn() == 0, 'schema migration did not make candidate export immediately due');
 $versionTwoSchema = $versionTwoPdo->query("SELECT type, name, sql FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' ORDER BY type, name")->fetchAll(PDO::FETCH_ASSOC);
 check($normalizeSchema($versionTwoSchema) === $normalizeSchema($migratedSchema), 'version-two migration and fresh schema differ');
+
+// Two migrators at once (FreshRSS install and cli/migrate.php): the second
+// must read the version under the write lock, wait for the first, and then
+// find nothing left to do instead of repeating the migration.
+$racePath = $directory . '/race.sqlite';
+$race = new PDO('sqlite:' . $racePath, null, null, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_TIMEOUT => 5]);
+$race->exec($versionTwoFixtureSql);
+$race->exec('BEGIN IMMEDIATE');
+$race->exec("ALTER TABLE candidate_members ADD COLUMN normalized_title TEXT NOT NULL DEFAULT ''");
+$race->exec('PRAGMA user_version = 3');
+$child = proc_open([
+	PHP_BINARY, '-r',
+	'require $argv[1]; try { (new SemanticGrouping_SemanticDatabase($argv[2], ""))->open(true); echo "migrated"; } catch (Throwable $e) { echo $e->getMessage(); exit(1); }',
+	'--', __DIR__ . '/../xExtension-SemanticGrouping/Models/SemanticDatabase.php', $racePath,
+], [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $childPipes);
+check(is_resource($child), 'concurrent migrator could not be started');
+// Long enough for the second migrator to reach its version check.
+usleep(500000);
+$race->exec('COMMIT');
+$childOutput = stream_get_contents($childPipes[1]) . stream_get_contents($childPipes[2]);
+fclose($childPipes[1]);
+fclose($childPipes[2]);
+check(proc_close($child) === 0 && $childOutput === 'migrated', 'concurrent migration failed: ' . $childOutput);
+$raceSchema = $race->query("SELECT type, name, sql FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' ORDER BY type, name")->fetchAll(PDO::FETCH_ASSOC);
+check($normalizeSchema($raceSchema) === $normalizeSchema($migratedSchema), 'concurrent migration changed the schema twice');
+unset($race);
 $pdo->exec('PRAGMA user_version = 99');
 unset($pdo);
 $database->fullReset();
@@ -498,6 +602,7 @@ unset($versionTwoPdo);
 @unlink($fixturePath);
 @unlink($legacyFixturePath);
 @unlink($versionTwoFixturePath);
+@unlink($racePath);
 @rmdir($directory);
 
 [$dsn, $user, $password] = SemanticGrouping_SemanticDatabase::postgresDsn("postgresql://role%40x:p%40ss@[::1]:6543/semantic%20db?sslmode=require&options=-csearch_path%3Dsg"); // gitleaks:allow

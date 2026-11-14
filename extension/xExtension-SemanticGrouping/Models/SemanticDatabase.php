@@ -216,18 +216,20 @@ final class SemanticGrouping_SemanticDatabase {
 			$this->migratePostgres($pdo);
 			return;
 		}
-		$current = (int)$pdo->query('PRAGMA user_version')->fetchColumn();
-		if ($current > self::SCHEMA_VERSION) {
-			throw new RuntimeException('Semantic database belongs to a newer release.');
-		}
-		if ($current === self::SCHEMA_VERSION) {
-			return;
-		}
-		if (!in_array($current, [0, 1, 2], true)) {
-			throw new RuntimeException('No migration path exists for this semantic database.');
-		}
-		$pdo->beginTransaction();
-		try {
+		// FreshRSS and the migration CLI may both start a migration. The version
+		// is read only after BEGIN IMMEDIATE takes the write lock, so a second
+		// migrator waits for the first and then finds the current version.
+		$migrated = self::transaction($pdo, static function (PDO $db): bool {
+			$current = (int)$db->query('PRAGMA user_version')->fetchColumn();
+			if ($current > self::SCHEMA_VERSION) {
+				throw new RuntimeException('Semantic database belongs to a newer release.');
+			}
+			if ($current === self::SCHEMA_VERSION) {
+				return false;
+			}
+			if (!in_array($current, [0, 1, 2], true)) {
+				throw new RuntimeException('No migration path exists for this semantic database.');
+			}
 			$statements = $current === 0 ? self::schemaStatements() : [];
 			if ($current === 1) {
 				$statements = array_merge($statements, self::labelSchemaStatements());
@@ -236,20 +238,17 @@ final class SemanticGrouping_SemanticDatabase {
 				$statements[] = "ALTER TABLE candidate_members ADD COLUMN normalized_title TEXT NOT NULL DEFAULT ''";
 			}
 			foreach ($statements as $sql) {
-				$pdo->exec($sql);
+				$db->exec($sql);
 			}
 			if ($current > 0) {
-				$pdo->exec('UPDATE pipeline_config SET database_schema_version = ' . self::SCHEMA_VERSION . ', producer_lease_until = 0');
-				$pdo->exec("DELETE FROM export_state WHERE key = 'last_export_success'");
+				$db->exec('UPDATE pipeline_config SET database_schema_version = ' . self::SCHEMA_VERSION . ', producer_lease_until = 0');
+				$db->exec("DELETE FROM export_state WHERE key = 'last_export_success'");
 			}
-			$pdo->exec('PRAGMA user_version = ' . self::SCHEMA_VERSION);
-			$pdo->commit();
+			$db->exec('PRAGMA user_version = ' . self::SCHEMA_VERSION);
+			return true;
+		});
+		if ($migrated) {
 			@chmod($this->path, 0660);
-		} catch (Throwable $error) {
-			if ($pdo->inTransaction()) {
-				$pdo->rollBack();
-			}
-			throw $error;
 		}
 	}
 

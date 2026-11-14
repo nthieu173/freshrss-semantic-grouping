@@ -58,7 +58,11 @@ authority if this reproducible database is reset or unavailable.
 
 For a schema upgrade, stop the worker, install the paired extension/worker
 release, enable or install the extension so its transactional migration runs,
-then start the new worker. The worker never performs this migration.
+then start the new worker. The worker never performs this migration. The
+migration reads the schema version only after taking the write lock
+(`BEGIN IMMEDIATE`, or the PostgreSQL write lock), so enabling the extension
+while `cli/migrate.php` runs is safe: the second migrator waits and then finds
+the schema current.
 
 Worker `rebuild` takes the worker advisory lock and deletes only embeddings,
 groups, group members, and worker state. The extension's administrator-only full

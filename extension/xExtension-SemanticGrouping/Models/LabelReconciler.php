@@ -173,7 +173,7 @@ final class SemanticGrouping_LabelReconciler {
 					continue;
 				}
 
-				$label = $this->selectOwnedLabel($key, $ownedByKey[$key] ?? []);
+				$label = self::selectOwnedLabel($ownedByKey[$key] ?? [], $snapshot['preferred_labels'][$key] ?? 0);
 				try {
 					if ($label === null) {
 						$labelId = $this->tagDao->addTag([
@@ -307,7 +307,7 @@ final class SemanticGrouping_LabelReconciler {
 		}
 	}
 
-	/** @return null|array{generation:int,grouping_fingerprint:string,candidate_ids:list<string>,groups:list<array{group_id:string,representative_entry_id:string,members:list<string>}>} */
+	/** @return null|array{generation:int,grouping_fingerprint:string,candidate_ids:list<string>,groups:list<array{group_id:string,representative_entry_id:string,members:list<string>}>,preferred_labels:array<string,int>} */
 	private function publishedSnapshot(): ?array {
 		$pdo = $this->database->open(false);
 		SemanticGrouping_SemanticDatabase::beginRead($pdo);
@@ -339,17 +339,34 @@ final class SemanticGrouping_LabelReconciler {
 			$candidateStatement = $pdo->prepare('SELECT entry_id FROM candidate_members WHERE generation=? ORDER BY entry_id');
 			$candidateStatement->execute([$generation]);
 			$candidateIds = array_map('strval', $candidateStatement->fetchAll(PDO::FETCH_COLUMN));
-			$groupStatement = $pdo->prepare('SELECT group_id, representative_entry_id FROM groups WHERE selection_generation=? AND grouping_fingerprint=? ORDER BY group_id');
+			// One query for every group and its members. The left join keeps a
+			// group without members, which reconciliation reports as an error.
+			$groupStatement = $pdo->prepare('SELECT g.group_id, g.representative_entry_id, gm.entry_id
+				FROM groups g LEFT JOIN group_members gm ON gm.group_id = g.group_id
+				WHERE g.selection_generation=? AND g.grouping_fingerprint=?
+				ORDER BY g.group_id, gm.entry_id');
 			$groupStatement->execute([$generation, $fingerprint]);
 			$groups = [];
-			$memberStatement = $pdo->prepare('SELECT entry_id FROM group_members WHERE group_id=? ORDER BY entry_id');
+			$index = null;
 			foreach ($groupStatement as $row) {
-				$memberStatement->execute([(string)$row['group_id']]);
-				$groups[] = [
-					'group_id' => (string)$row['group_id'],
-					'representative_entry_id' => (string)$row['representative_entry_id'],
-					'members' => array_map('strval', $memberStatement->fetchAll(PDO::FETCH_COLUMN)),
-				];
+				$groupId = (string)$row['group_id'];
+				if ($index === null || $groups[$index]['group_id'] !== $groupId) {
+					$groups[] = [
+						'group_id' => $groupId,
+						'representative_entry_id' => (string)$row['representative_entry_id'],
+						'members' => [],
+					];
+					$index = array_key_last($groups);
+				}
+				if ($row['entry_id'] !== null) {
+					$groups[$index]['members'][] = (string)$row['entry_id'];
+				}
+			}
+			// Read here rather than per group: this pass holds the label lock,
+			// the only writer of managed_labels, so the mapping cannot change.
+			$preferredLabels = [];
+			foreach ($pdo->query('SELECT semantic_key, label_id FROM managed_labels') as $row) {
+				$preferredLabels[(string)$row['semantic_key']] = (int)$row['label_id'];
 			}
 			$pdo->commit();
 			return [
@@ -357,6 +374,7 @@ final class SemanticGrouping_LabelReconciler {
 				'grouping_fingerprint' => $fingerprint,
 				'candidate_ids' => $candidateIds,
 				'groups' => $groups,
+				'preferred_labels' => $preferredLabels,
 			];
 		} catch (Throwable $error) {
 			if ($pdo->inTransaction()) {
@@ -381,15 +399,15 @@ final class SemanticGrouping_LabelReconciler {
 		return $tags;
 	}
 
-	/** @param list<array{id:int,name:string,attributes:mixed}> $labels @return null|array{id:int,name:string,attributes:mixed} */
-	private function selectOwnedLabel(string $key, array $labels): ?array {
+	/**
+	 * The label recorded in managed_labels for this key, else the oldest.
+	 * @param list<array{id:int,name:string,attributes:mixed}> $labels
+	 * @return null|array{id:int,name:string,attributes:mixed}
+	 */
+	private static function selectOwnedLabel(array $labels, int $preferred): ?array {
 		if ($labels === []) {
 			return null;
 		}
-		$pdo = $this->database->open(false, true);
-		$statement = $pdo->prepare('SELECT label_id FROM managed_labels WHERE semantic_key=?');
-		$statement->execute([$key]);
-		$preferred = (int)($statement->fetchColumn() ?: 0);
 		usort($labels, static fn(array $left, array $right): int => (int)$left['id'] <=> (int)$right['id']);
 		foreach ($labels as $label) {
 			if ((int)$label['id'] === $preferred) {
