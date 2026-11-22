@@ -4,7 +4,7 @@ ARG UV_IMAGE=ghcr.io/astral-sh/uv:latest
 FROM ${UV_IMAGE} AS uv
 FROM ${PYTHON_IMAGE}
 
-ARG VERSION=0.14.0
+ARG VERSION=0.15.0
 ARG REVISION=unknown
 ARG SOURCE=https://github.com/example/freshrss-semantic-grouping
 ARG POTION_BASE_32M_REVISION=1e5a03f8eeb2c98b928fbbd846f22f816360919f
