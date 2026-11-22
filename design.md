@@ -23,7 +23,7 @@ The initial scope is one configured FreshRSS user and includes:
 - normalized-title deduplication within potential semantic groups;
 - native FreshRSS labels for semantic groups and single articles;
 - extension-owned full reset and worker-owned derived-data rebuild;
-- separate embedding and grouping processes under a 400 MiB worker limit.
+- separate embedding and grouping processes under a 512 MiB worker limit.
 
 Semantic grouping never marks, deletes, or suppresses FreshRSS entries. It
 changes only extension-owned label assignments. Exact-title rejection is the

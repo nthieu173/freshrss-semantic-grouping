@@ -31,13 +31,13 @@ database.executescript(Path(os.environ["SMOKE_SCHEMA"]).read_text())
 now = int(time.time())
 config = {
     "enabled": True,
-    "embedding_model": "minishlab/potion-base-8M",
+    "embedding_model": "minishlab/potion-base-32M",
     "similarity_threshold": 0.25,
     "window_hours": 72,
     "include_title": True,
     "include_content": False,
     "content_character_limit": 2000,
-    "embedding_batch_size": 128,
+    "embedding_batch_size": 500,
     "normalization_version": 1,
     "query_fingerprint": "smoke",
     "force_rebuild_token": "",
@@ -82,7 +82,7 @@ chmod 0666 "$smoke_dir/semantic.sqlite"
 "$runtime" run --rm --platform "$worker_platform" --read-only \
 	--tmpfs /tmp:rw,size=32m \
 	--network none \
-	--memory 400m \
+	--memory 512m \
 	--volume "$smoke_dir:/semantic-data:rw,z" \
 	"$worker_image" run
 

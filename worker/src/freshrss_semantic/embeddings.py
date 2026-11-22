@@ -16,8 +16,11 @@ from numpy.typing import NDArray
 from .semantic_store import SemanticStore
 
 LOGGER = logging.getLogger(__name__)
-DEFAULT_MODEL_ID = "minishlab/potion-base-8M"
-DEFAULT_BUNDLED_MODEL = Path("/opt/models/potion-base-8M")
+# Models baked into the worker image (packaging/Containerfile), loaded offline.
+BUNDLED_MODELS = {
+    "minishlab/potion-base-32M": Path("/opt/models/potion-base-32M"),
+    "minishlab/potion-base-8M": Path("/opt/models/potion-base-8M"),
+}
 
 
 class Encoder(Protocol):
@@ -25,15 +28,12 @@ class Encoder(Protocol):
 
 
 def load_model(model_id: str) -> Encoder:
-    """Load the configured model, preferring the image-bundled default copy."""
+    """Load the configured model, preferring an image-bundled copy."""
     os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
     from model2vec import StaticModel
 
-    location = (
-        str(DEFAULT_BUNDLED_MODEL)
-        if model_id == DEFAULT_MODEL_ID and DEFAULT_BUNDLED_MODEL.is_dir()
-        else model_id
-    )
+    bundled = BUNDLED_MODELS.get(model_id)
+    location = str(bundled) if bundled is not None and bundled.is_dir() else model_id
     return StaticModel.from_pretrained(location)
 
 

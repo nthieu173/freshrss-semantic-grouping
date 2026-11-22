@@ -63,7 +63,7 @@ article input and existing embedding. A row is pending when its vector is absent
 or its source/configuration fingerprint is stale.
 
 The phase loads Model2Vec once and processes canonical text in configurable
-batches, defaulting to 128 and capped at 256. Multiprocessing is disabled. Each
+batches, defaulting to and capped at 500. Multiprocessing is disabled. Each
 batch is read in a short read-only transaction that first rechecks the
 generation and revision. Text encoding occurs outside any transaction; each
 batch is then upserted in one statement inside a short write transaction after
@@ -120,13 +120,14 @@ extension state, schema, or the database file.
 Embedding and grouping run in separate processes so model weights, article text,
 and the SemHash/USearch index do not occupy memory together. Each phase logs
 entry count, dimensions where applicable, duration, and peak RSS. The integration
-contract runs the real bundled model and SemHash below a 400 MiB hard limit.
+contract runs the real bundled default model and SemHash below a 512 MiB hard limit.
 
 The image uses the Python in `packaging/Containerfile` with pinned direct and
-transitive dependencies. It bundles `minishlab/potion-base-8M` at the model
-revision pinned there as `MODEL_REVISION`, runs as UID 10001 and GID 33, has
-no network listener, supports a read-only root filesystem, and uses `/tmp` only
-for runtime caches. The bundled default model works with networking disabled.
+transitive dependencies. It bundles `minishlab/potion-base-32M` (the default)
+and `minishlab/potion-base-8M` at the model revisions pinned there, runs as UID
+10001 and GID 33, has no network listener, supports a read-only root filesystem,
+and uses `/tmp` only for runtime caches. Both bundled models work with
+networking disabled.
 
 A configured non-default Hugging Face model may require outbound access and a
 larger or persistent cache. That is an explicit deployment change, not part of

@@ -200,7 +200,7 @@ function pipelineConfig(): array {
 			'query_id' => 0,
 			'query_name' => 'Integration candidates',
 		],
-		'embedding_model' => 'minishlab/potion-base-8M',
+		'embedding_model' => 'minishlab/potion-base-32M',
 		'similarity_threshold' => 0.25,
 		'window_hours' => 72,
 		'candidate_export_interval_minutes' => 30,
@@ -208,7 +208,7 @@ function pipelineConfig(): array {
 		'include_content' => false,
 		'content_character_limit' => 2000,
 		'exact_title_enabled' => true,
-		'embedding_batch_size' => 128,
+		'embedding_batch_size' => 500,
 	]);
 }
 
@@ -219,7 +219,7 @@ function configureWhileDisabled(): void {
 	$params = [
 		'candidate_source' => 'all_entries',
 		'enabled' => '1',
-		'embedding_model' => 'integration/pre-enable',
+		'embedding_model' => 'minishlab/potion-base-8M',
 		'similarity_threshold' => '0.75',
 		'window_hours' => '48',
 		'candidate_export_interval_minutes' => '20',
@@ -237,13 +237,17 @@ function configureWhileDisabled(): void {
 		$extension->handleConfigureAction();
 		same($extension->configurationErrors, [], 'Saving configuration while disabled failed');
 		same($extension->configuration['candidate_source']['mode'], 'all_entries', 'All entries was not saved before enabling');
-		same($extension->configuration['embedding_model'], 'integration/pre-enable', 'Saved settings were reset before enabling');
+		same($extension->configuration['embedding_model'], 'minishlab/potion-base-8M', 'Saved settings were reset before enabling');
 		same($extension->configuration['force_rebuild_token'], '', 'Saving unexpectedly changed the rebuild token');
 		FreshRSS_Context::initUser('admin');
 		$stored = FreshRSS_Context::userConf()->extensions[SEMANTIC_EXTENSION_NAME] ?? null;
 			check(is_array($stored), 'Configuration was not persisted through FreshRSS');
 			same($stored, $extension->configuration, 'Reloaded FreshRSS configuration differs from the submitted settings');
 			check(!array_key_exists('minimum_group_size', $stored), 'Configurable minimum group size was persisted');
+		Minz_Request::_params(['embedding_model' => 'integration/not-listed'] + $params);
+		$extension->handleConfigureAction();
+		same($extension->configurationErrors, ['Choose one of the listed embedding models.'], 'An unlisted embedding model was accepted from the form');
+		same($extension->configuration['embedding_model'], 'minishlab/potion-base-8M', 'A rejected model replaced the saved one');
 	} finally {
 		Minz_Request::_params($previousParams);
 		if ($previousMethod === null) {

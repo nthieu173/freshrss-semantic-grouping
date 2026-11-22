@@ -6,6 +6,20 @@ final class SemanticGrouping_Config {
 	public const NORMALIZATION_VERSION = 1;
 	public const MINIMUM_GROUP_SIZE = 2;
 	public const GROUPING_FORMAT_VERSION = 2;
+	/**
+	 * Model2Vec embeds only a text's first 512 tokens, roughly 2000 characters,
+	 * so longer content would cost worker memory without changing a vector.
+	 */
+	public const MAX_CONTENT_CHARACTERS = 2000;
+	public const MAX_EMBEDDING_BATCH_SIZE = 500;
+	/**
+	 * Models baked into the paired worker image (BUNDLED_MODELS in the worker's
+	 * embeddings.py), as identifier => configuration-form label.
+	 */
+	public const BUNDLED_MODELS = [
+		'minishlab/potion-base-32M' => 'potion-base-32M (default, 512 dimensions)',
+		'minishlab/potion-base-8M' => 'potion-base-8M (256 dimensions, less memory)',
+	];
 
 	/** @return array<string,mixed> */
 	public static function defaults(): array {
@@ -17,7 +31,7 @@ final class SemanticGrouping_Config {
 				'query_id' => null,
 				'query_name' => 'All entries',
 			],
-			'embedding_model' => 'minishlab/potion-base-8M',
+			'embedding_model' => 'minishlab/potion-base-32M',
 			'similarity_threshold' => 0.90,
 			'window_hours' => 72,
 			'candidate_export_interval_minutes' => 30,
@@ -25,10 +39,23 @@ final class SemanticGrouping_Config {
 			'include_content' => false,
 			'content_character_limit' => 2000,
 			'exact_title_enabled' => true,
-			'embedding_batch_size' => 128,
+			'embedding_batch_size' => self::MAX_EMBEDDING_BATCH_SIZE,
 			'normalization_version' => self::NORMALIZATION_VERSION,
 			'force_rebuild_token' => '',
 		];
+	}
+
+	/**
+	 * The models the configuration form offers: the bundled ones, plus the
+	 * stored model when it is not bundled, so saving keeps an existing choice.
+	 * @return array<string,string> identifier => label
+	 */
+	public static function modelChoices(string $current): array {
+		$choices = self::BUNDLED_MODELS;
+		if (trim($current) !== '' && !isset($choices[$current])) {
+			$choices[$current] = $current . ' (current; not bundled, downloaded by the worker)';
+		}
+		return $choices;
 	}
 
 	/** @param array<string,mixed> $stored @return array<string,mixed> */
@@ -39,6 +66,11 @@ final class SemanticGrouping_Config {
 		$refreshInterval = $config['candidate_export_interval_minutes'] ?? null;
 		if (is_int($refreshInterval) && $refreshInterval >= 1 && $refreshInterval <= 1440) {
 			$config['candidate_export_interval_minutes'] = min(1440, max(10, intdiv($refreshInterval + 9, 10) * 10));
+		}
+		// Limits saved before the 2000-character cap keep exporting at the cap.
+		$contentLimit = $config['content_character_limit'] ?? null;
+		if (is_int($contentLimit) && $contentLimit > self::MAX_CONTENT_CHARACTERS) {
+			$config['content_character_limit'] = self::MAX_CONTENT_CHARACTERS;
 		}
 		$source = is_array($stored['candidate_source'] ?? null) ? $stored['candidate_source'] : [];
 		$config['candidate_source'] = array_replace(self::defaults()['candidate_source'], $source);
@@ -64,7 +96,7 @@ final class SemanticGrouping_Config {
 			'include_content' => Minz_Request::paramBoolean('include_content'),
 			'content_character_limit' => Minz_Request::paramInt('content_character_limit'),
 			'exact_title_enabled' => Minz_Request::paramBoolean('exact_title_enabled'),
-			'embedding_batch_size' => Minz_Request::paramInt('embedding_batch_size') ?: 128,
+			'embedding_batch_size' => Minz_Request::paramInt('embedding_batch_size') ?: self::MAX_EMBEDDING_BATCH_SIZE,
 			'normalization_version' => self::NORMALIZATION_VERSION,
 			'force_rebuild_token' => Minz_Request::paramString('force_rebuild_token', plaintext: true),
 		];
@@ -91,8 +123,8 @@ final class SemanticGrouping_Config {
 		} elseif ($refreshInterval % 10 !== 0) {
 			$errors[] = 'Refresh interval must be a multiple of 10 minutes.';
 		}
-		self::validateInt($config, 'content_character_limit', 0, 100000, $errors);
-		self::validateInt($config, 'embedding_batch_size', 1, 256, $errors);
+		self::validateInt($config, 'content_character_limit', 0, self::MAX_CONTENT_CHARACTERS, $errors);
+		self::validateInt($config, 'embedding_batch_size', 1, self::MAX_EMBEDDING_BATCH_SIZE, $errors);
 		if (empty($config['include_title']) && empty($config['include_content'])) {
 			$errors[] = 'Enable title or content as an embedding input.';
 		}

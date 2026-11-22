@@ -115,7 +115,7 @@ worker() {
 		--network "$worker_network" \
 		--env "SEMANTIC_DATABASE_URL=$database_url" \
 		--tmpfs /tmp:rw,size=32m \
-		--memory 400m \
+		--memory 512m \
 		--volume "$integration_dir/semantic-data:/semantic-data:rw,z" \
 		"$worker_image" "$@"
 }

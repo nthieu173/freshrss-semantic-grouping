@@ -34,7 +34,7 @@ must already exist.
 
 `make test/smoke` runs an already-built worker image against a temporary schema-v3
 database with networking disabled, a read-only root, a 32 MiB `/tmp`, and a
-400 MiB memory limit. It defaults to the CI image and platform; local runs can
+512 MiB memory limit. It defaults to the CI image and platform; local runs can
 override them together with the container runtime:
 
 ```sh
@@ -73,7 +73,7 @@ The integration scenario verifies:
 - worker/database failures leave FreshRSS healthy.
 
 The worker container is run with networking disabled, a read-only root, a 32 MiB
-`/tmp`, only the semantic-data mount, and a 400 MiB memory limit. This validates
+`/tmp`, only the semantic-data mount, and a 512 MiB memory limit. This validates
 the deployed permission, offline-model, filesystem, and memory contracts rather
 than only testing Python functions on the host.
 

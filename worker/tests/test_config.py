@@ -39,3 +39,12 @@ def test_default_fingerprints_match_the_php_producer_contract() -> None:
     assert config.grouping_fingerprint == (
         "ead21a46c9b0161a3ecc806982bb2c5488ab79ebf60ff8051ad0e486d6368d99"
     )
+
+
+@pytest.mark.parametrize(
+    ("key", "maximum"), [("content_character_limit", 2000), ("embedding_batch_size", 500)]
+)
+def test_content_and_batch_limits_match_the_extension(key: str, maximum: int) -> None:
+    assert getattr(WorkerConfig.from_mapping(worker_config(**{key: maximum})), key) == maximum
+    with pytest.raises(ConfigurationError, match=key):
+        WorkerConfig.from_mapping(worker_config(**{key: maximum + 1}))

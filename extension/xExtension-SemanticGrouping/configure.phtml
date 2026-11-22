@@ -49,7 +49,14 @@ $formatTime = static function (mixed $value): string {
 
 	<div class="form-group">
 		<label class="group-name" for="embedding-model">Embedding model</label>
-		<div class="group-controls"><input class="w100" id="embedding-model" name="embedding_model" value="<?= $escaped($config['embedding_model']) ?>" required="required" /></div>
+		<div class="group-controls">
+			<select id="embedding-model" name="embedding_model" required="required">
+				<?php foreach (SemanticGrouping_Config::modelChoices((string)$config['embedding_model']) as $modelId => $modelLabel): ?>
+					<option value="<?= $escaped($modelId) ?>"<?= $modelId === $config['embedding_model'] ? ' selected="selected"' : '' ?>><?= $escaped($modelLabel) ?></option>
+				<?php endforeach; ?>
+			</select>
+			<p class="help">Bundled models run offline in the worker image. Changing the model re-embeds every candidate.</p>
+		</div>
 	</div>
 
 	<div class="form-group">
@@ -68,7 +75,8 @@ $formatTime = static function (mixed $value): string {
 			<label><input type="checkbox" name="include_title" value="1"<?= $checked(!empty($config['include_title'])) ?> /> Title</label><br />
 			<label><input type="checkbox" name="include_content" value="1"<?= $checked(!empty($config['include_content'])) ?> /> Content</label><br />
 			<label for="content-limit">Content character limit</label>
-			<input id="content-limit" type="number" min="0" max="100000" name="content_character_limit" value="<?= (int)$config['content_character_limit'] ?>" required="required" />
+			<input id="content-limit" type="number" min="0" max="<?= SemanticGrouping_Config::MAX_CONTENT_CHARACTERS ?>" name="content_character_limit" value="<?= (int)$config['content_character_limit'] ?>" required="required" />
+			<p class="help">The embedding models read only about the first <?= SemanticGrouping_Config::MAX_CONTENT_CHARACTERS ?> characters of an article.</p>
 		</div>
 	</div>
 
@@ -77,7 +85,7 @@ $formatTime = static function (mixed $value): string {
 		<div class="group-controls">
 			<div class="semantic-grid">
 				<label>Refresh interval (minutes) <input type="number" min="10" max="1440" step="10" name="candidate_export_interval_minutes" value="<?= (int)$config['candidate_export_interval_minutes'] ?>" required="required" /></label>
-				<label>Embedding batch size <input type="number" min="1" max="256" name="embedding_batch_size" value="<?= (int)$config['embedding_batch_size'] ?>" required="required" /></label>
+				<label>Embedding batch size <input type="number" min="1" max="<?= SemanticGrouping_Config::MAX_EMBEDDING_BATCH_SIZE ?>" name="embedding_batch_size" value="<?= (int)$config['embedding_batch_size'] ?>" required="required" /></label>
 			</div>
 			<p class="help">The worker checks for exported changes every 10 minutes at a stable, randomized offset of up to 10 minutes. Values below 10 minutes or between 10-minute increments cannot refresh groups sooner.</p>
 		</div>

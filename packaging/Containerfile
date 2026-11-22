@@ -7,7 +7,8 @@ FROM ${PYTHON_IMAGE}
 ARG VERSION=0.14.0
 ARG REVISION=unknown
 ARG SOURCE=https://github.com/example/freshrss-semantic-grouping
-ARG MODEL_REVISION=bf8b056651a2c21b8d2565580b8569da283cab23
+ARG POTION_BASE_32M_REVISION=1e5a03f8eeb2c98b928fbbd846f22f816360919f
+ARG POTION_BASE_8M_REVISION=bf8b056651a2c21b8d2565580b8569da283cab23
 
 LABEL org.opencontainers.image.title="FreshRSS semantic grouping worker" \
       org.opencontainers.image.description="Offline Model2Vec and SemHash worker for FreshRSS" \
@@ -15,7 +16,8 @@ LABEL org.opencontainers.image.title="FreshRSS semantic grouping worker" \
       org.opencontainers.image.revision="${REVISION}" \
       org.opencontainers.image.version="${VERSION}" \
       org.opencontainers.image.licenses="GPL-3.0" \
-      io.freshrss.semantic.model.revision="${MODEL_REVISION}"
+      io.freshrss.semantic.model.potion-base-32m.revision="${POTION_BASE_32M_REVISION}" \
+      io.freshrss.semantic.model.potion-base-8m.revision="${POTION_BASE_8M_REVISION}"
 
 # TOKENIZERS_PARALLELISM is a setting, not a secret.
 # hadolint ignore=DL3064
@@ -36,8 +38,8 @@ COPY worker/pyproject.toml worker/uv.lock worker/README.md /app/worker/
 RUN uv sync --project /app/worker --locked --no-dev --no-install-project \
 	&& uv cache clean \
 	&& mkdir -p /opt/models \
-	&& MODEL_REVISION="${MODEL_REVISION}" python -c 'import os; from huggingface_hub import snapshot_download; from model2vec import StaticModel; source = snapshot_download("minishlab/potion-base-8M", revision=os.environ["MODEL_REVISION"], allow_patterns=["README.md", "config.json", "model.safetensors", "modules.json", "tokenizer.json"]); StaticModel.from_pretrained(source).save_pretrained("/opt/models/potion-base-8M")' \
-	&& chmod -R a+rX /opt/models/potion-base-8M \
+	&& POTION_BASE_32M_REVISION="${POTION_BASE_32M_REVISION}" POTION_BASE_8M_REVISION="${POTION_BASE_8M_REVISION}" python -c 'import os; from huggingface_hub import snapshot_download; from model2vec import StaticModel; [StaticModel.from_pretrained(snapshot_download(f"minishlab/{name}", revision=os.environ[variable], allow_patterns=["README.md", "config.json", "model.safetensors", "modules.json", "tokenizer.json"])).save_pretrained(f"/opt/models/{name}") for name, variable in (("potion-base-32M", "POTION_BASE_32M_REVISION"), ("potion-base-8M", "POTION_BASE_8M_REVISION"))]' \
+	&& chmod -R a+rX /opt/models \
 	&& rm -rf /tmp/huggingface /tmp/.cache
 COPY worker/src /app/worker/src
 RUN uv sync --project /app/worker --locked --no-dev --no-editable \

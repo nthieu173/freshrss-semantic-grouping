@@ -8,14 +8,19 @@ fingerprint into `pipeline_config`; the worker does not read FreshRSS files.
 |---|---:|---|
 | Pipeline enabled | yes | Enables export and renews the producer lease. Turning it off publishes a disabled revision. |
 | Candidate source | All entries | Includes every entry in the rolling window. A native FreshRSS saved query can be selected instead. |
-| Embedding model | `minishlab/potion-base-8M` | Changes invalidate embeddings and groups. |
+| Embedding model | `minishlab/potion-base-32M` | Chosen from the models bundled in the worker image (`minishlab/potion-base-8M` is the other). Changes invalidate embeddings and groups. |
 | Similarity threshold | `0.90` | Changes groups without invalidating vectors. |
 | Rolling window | 72 hours | An outer received-date constraint independent of the saved query. |
 | Refresh interval | 30 minutes | Candidate reconciliation interval in 10-minute increments; config/query changes bypass it. |
 | Title/content input | title only | Selected fields become canonical embedding text. |
-| Content limit | 2000 characters | Applied after HTML decoding, markup removal, Unicode normalization, and whitespace normalization. |
-| Embedding batch | 128 | May be raised to 256 after measuring memory. |
+| Content limit | 2000 characters | The maximum, since the models embed only about the first 2000 characters. Applied after HTML decoding, markup removal, Unicode normalization, and whitespace normalization. A higher saved limit is treated as 2000. |
+| Embedding batch | 500 | The maximum; fits the 512 MiB worker limit at the 2000-character content limit. |
 | Exact-title filter | yes | Rejects a normalized exact title before insertion. |
+
+The configuration form offers only the bundled models. A model saved before
+the form was limited stays in effect and is listed as the current choice until
+another is selected; a model that is not bundled is downloaded by the worker
+([deployment](deployment.md#shared-storage)).
 
 The semantic group minimum is fixed at two and is not configurable. After a
 potential group is formed, later articles with a normalized title already in

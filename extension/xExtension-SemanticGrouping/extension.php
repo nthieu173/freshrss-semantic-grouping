@@ -110,6 +110,12 @@ final class SemanticGroupingExtension extends Minz_Extension {
 			} else {
 				$config = SemanticGrouping_Config::fromRequest();
 				$this->configurationErrors = SemanticGrouping_Config::validate($config);
+				// Only the form is limited to the listed models; a stored model that
+				// is not bundled stays valid for the exporter.
+				$modelChoices = SemanticGrouping_Config::modelChoices((string)($this->configuration['embedding_model'] ?? ''));
+				if (!isset($modelChoices[(string)($config['embedding_model'] ?? '')])) {
+					$this->configurationErrors[] = 'Choose one of the listed embedding models.';
+				}
 				if ($this->configurationErrors === [] && !empty($config['enabled'])) {
 					try {
 						SemanticGrouping_CandidateSource::resolve($config);

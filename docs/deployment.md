@@ -21,15 +21,18 @@ the setgid directory then gives both containers group-owned `0660` files.
 
 The worker image runs as UID 10001 with primary GID 33, has no network listener,
 and expects a read-only root filesystem plus a small writable `/tmp` tmpfs. The
-default model is baked into `/opt/models/potion-base-8M`, so normal runs need no
-outbound network. Release builds pin that model to Hugging Face revision
-`MODEL_REVISION` in `packaging/Containerfile`; override that build argument only
-as part of a tested paired release.
+default `minishlab/potion-base-32M` and the earlier default
+`minishlab/potion-base-8M` are baked into `/opt/models`, so runs with either
+need no outbound network. Release builds pin each model to the Hugging Face
+revision in its `POTION_BASE_*_REVISION` build argument in
+`packaging/Containerfile`; override those only as part of a tested paired
+release.
 
-A non-default model is resolved through Hugging Face into `/tmp/huggingface`.
+Any other model is resolved through Hugging Face into `/tmp/huggingface`.
 Such a configuration therefore needs outbound access and a `/tmp` allocation
 large enough for that model (or an explicitly managed cache mount); the bundled
-default does not.
+models do not. A `/tmp` tmpfs counts against the container's memory limit, so
+raise `--memory` by the model's size as well.
 
 Example Podman invocation:
 
@@ -37,7 +40,7 @@ Example Podman invocation:
 podman run --rm \
   --read-only \
   --tmpfs /tmp:rw,size=32m \
-  --memory 400m \
+  --memory 512m \
   --volume /var/lib/freshrss/semantic:/semantic-data:rw,z \
   ghcr.io/OWNER/freshrss-semantic-grouping:VERSION run
 ```
@@ -86,7 +89,7 @@ mount:
 podman run --rm \
   --read-only \
   --tmpfs /tmp:rw,size=32m \
-  --memory 400m \
+  --memory 512m \
   --network DATABASE-NETWORK \
   --env-file /run/semantic-worker.env \
   ghcr.io/OWNER/freshrss-semantic-grouping:VERSION run

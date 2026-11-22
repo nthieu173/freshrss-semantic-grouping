@@ -18,6 +18,10 @@ class ConfigurationMissing(ConfigurationError):
 
 MINIMUM_GROUP_SIZE = 2
 GROUPING_FORMAT_VERSION = 2
+# Match the extension's limits: Model2Vec embeds about the first 2000
+# characters, and 500 such texts fit the worker's 512 MiB limit.
+MAX_CONTENT_CHARACTERS = 2000
+MAX_EMBEDDING_BATCH_SIZE = 500
 
 
 def canonical_json(value: Any) -> str:
@@ -95,8 +99,10 @@ class WorkerConfig:
             window_hours=_int(data, "window_hours", 1, 24 * 365),
             include_title=include_title,
             include_content=include_content,
-            content_character_limit=_int(data, "content_character_limit", 0, 100_000),
-            embedding_batch_size=_int(data, "embedding_batch_size", 1, 256),
+            content_character_limit=_int(
+                data, "content_character_limit", 0, MAX_CONTENT_CHARACTERS
+            ),
+            embedding_batch_size=_int(data, "embedding_batch_size", 1, MAX_EMBEDDING_BATCH_SIZE),
             normalization_version=_int(data, "normalization_version", 1, 1000),
             query_fingerprint=query_fingerprint,
             force_rebuild_token=rebuild_token,

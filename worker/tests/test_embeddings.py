@@ -64,3 +64,41 @@ def test_embed_phase_uses_one_connection_and_encodes_outside_transactions(
     monkeypatch.setattr(SemanticStore, "connect", counting_connect)
     assert embed(store, lambda _model: CheckingEncoder()) == 5
     assert connections == 1
+
+
+def test_load_model_prefers_bundled_copies_and_falls_back_to_hub(tmp_path, monkeypatch) -> None:
+    import model2vec
+
+    from freshrss_semantic import embeddings
+
+    bundled_32m, bundled_8m = tmp_path / "potion-base-32M", tmp_path / "potion-base-8M"
+    bundled_32m.mkdir()
+    bundled_8m.mkdir()
+    monkeypatch.setattr(
+        embeddings,
+        "BUNDLED_MODELS",
+        {
+            "minishlab/potion-base-32M": bundled_32m,
+            "minishlab/potion-base-8M": bundled_8m,
+            "minishlab/not-built-in": tmp_path / "absent",
+        },
+    )
+    loaded: list[str] = []
+
+    def record(_cls: type, path: str) -> None:
+        loaded.append(path)
+
+    monkeypatch.setattr(model2vec.StaticModel, "from_pretrained", classmethod(record))
+    for model_id in (
+        "minishlab/potion-base-32M",
+        "minishlab/potion-base-8M",
+        "minishlab/not-built-in",
+        "someone/other-model",
+    ):
+        embeddings.load_model(model_id)
+    assert loaded == [
+        str(bundled_32m),
+        str(bundled_8m),
+        "minishlab/not-built-in",
+        "someone/other-model",
+    ]

@@ -312,8 +312,11 @@ function exerciseDatabase(SemanticGrouping_SemanticDatabase $database): PDO {
 	]]);
 	check($pdo->query("SELECT normalized_title FROM candidate_members WHERE entry_id='100000000'")->fetchColumn() === 'hello', 'normalized candidate title was not persisted');
 	check($pdo->query('SELECT COUNT(*) FROM pipeline_config')->fetchColumn() == 0, 'incomplete generation became active');
+	// The model is explicit so this cross-language contract (shared with
+	// worker/tests/test_config.py) does not move when the default model does.
 	$config = SemanticGrouping_Config::effectiveWorkerConfig(SemanticGrouping_Config::merge([
 		'candidate_source' => ['mode' => 'all_entries', 'query_id' => null, 'query_name' => 'All entries'],
+		'embedding_model' => 'minishlab/potion-base-8M',
 	]), 'query-v1');
 	check(SemanticGrouping_Config::embeddingFingerprint($config) === '735c7ecc39088db6c69eff6eecb21a27d5d78d31652f6b745d4c715eaf8dcfdf', 'PHP/Python embedding fingerprint contract changed');
 	check(SemanticGrouping_Config::groupingFingerprint($config) === 'ead21a46c9b0161a3ecc806982bb2c5488ab79ebf60ff8051ad0e486d6368d99', 'PHP/Python grouping fingerprint contract changed');
@@ -321,6 +324,17 @@ function exerciseDatabase(SemanticGrouping_SemanticDatabase $database): PDO {
 	$invalidThreshold['similarity_threshold'] = NAN;
 	check(SemanticGrouping_Config::validate($invalidThreshold) !== [], 'non-numeric similarity threshold was accepted');
 	$defaults = SemanticGrouping_Config::defaults();
+	check(isset(SemanticGrouping_Config::BUNDLED_MODELS[$defaults['embedding_model']]), 'Default embedding model is not bundled');
+	check(SemanticGrouping_Config::modelChoices('minishlab/potion-base-8M') === SemanticGrouping_Config::BUNDLED_MODELS, 'Bundled model choices changed for a bundled current model');
+	$customChoices = SemanticGrouping_Config::modelChoices('someone/custom-model');
+	check(count($customChoices) === count(SemanticGrouping_Config::BUNDLED_MODELS) + 1 && isset($customChoices['someone/custom-model']), 'Stored custom model was not kept as a choice');
+	check(SemanticGrouping_Config::modelChoices('  ') === SemanticGrouping_Config::BUNDLED_MODELS, 'Blank stored model became a choice');
+	$containerfile = (string)file_get_contents(__DIR__ . '/../../packaging/Containerfile');
+	$workerEmbeddings = (string)file_get_contents(__DIR__ . '/../../worker/src/freshrss_semantic/embeddings.py');
+	foreach (array_keys(SemanticGrouping_Config::BUNDLED_MODELS) as $bundledModel) {
+		check(str_contains($containerfile, '"' . basename($bundledModel) . '"'), "Worker image does not bundle {$bundledModel}");
+		check(str_contains($workerEmbeddings, '"' . $bundledModel . '"'), "Worker does not load {$bundledModel} from its bundled copy");
+	}
 	check(!array_key_exists('minimum_group_size', $defaults), 'Minimum group size remains configurable');
 	check(!array_key_exists('worker_interval_minutes', $defaults), 'Worker interval remains user-configurable');
 	$legacyConfig = SemanticGrouping_Config::merge([
@@ -328,8 +342,19 @@ function exerciseDatabase(SemanticGrouping_SemanticDatabase $database): PDO {
 		'candidate_export_interval_minutes' => 11,
 		'worker_interval_minutes' => 60,
 		'minimum_group_size' => 99,
+		'content_character_limit' => 5000,
+		'embedding_batch_size' => 256,
 	]);
 	check($legacyConfig['candidate_export_interval_minutes'] === 20, 'Legacy refresh interval was not rounded to a worker boundary');
+	check($legacyConfig['content_character_limit'] === 2000, 'Legacy content limit above the cap was not lowered to it');
+	check($legacyConfig['embedding_batch_size'] === 256, 'A valid saved batch size was changed');
+	check(SemanticGrouping_Config::validate($legacyConfig) === [], 'A legacy configuration no longer validates');
+	check($defaults['content_character_limit'] === 2000 && $defaults['embedding_batch_size'] === 500, 'Content and batch defaults are not the measured maxima');
+	foreach (['content_character_limit' => 2001, 'embedding_batch_size' => 501] as $key => $tooLarge) {
+		$oversized = $legacyConfig;
+		$oversized[$key] = $tooLarge;
+		check(SemanticGrouping_Config::validate($oversized) !== [], "{$key} above its maximum was accepted");
+	}
 	check(!array_key_exists('worker_interval_minutes', $legacyConfig), 'Legacy worker interval was not removed');
 	check(!array_key_exists('minimum_group_size', $legacyConfig), 'Legacy minimum group size was not removed');
 	check($legacyConfig['schema_version'] === 3, 'Legacy configuration schema was not migrated');
