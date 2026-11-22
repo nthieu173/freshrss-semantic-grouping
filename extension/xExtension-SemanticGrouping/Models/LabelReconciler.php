@@ -158,8 +158,8 @@ final class SemanticGrouping_LabelReconciler {
 			// pass, but it holds its name until then, and FreshRSS label names
 			// are unique. A target that needs that exact name takes the obsolete
 			// label over instead of creating one. This happens when the worker
-			// re-keys a group because its representative changed to another
-			// article with the same title.
+			// re-keys a group because its earliest article changed and the new
+			// key's representative has the same title.
 			$selectedLabels = [];
 			$selectedIds = [];
 			foreach ($targets as $key => $target) {

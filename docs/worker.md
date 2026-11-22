@@ -96,9 +96,13 @@ SemHash duplicate edges are combined with union-find into connected components.
 After ordering members by `(received_at, entry_id)`, the worker excludes each
 later member whose non-blank normalized title already occurs in that potential
 group. Components smaller than two articles after this check are dropped. The
-earliest remaining member is the representative and its versioned SHA-256-derived
-ID names the group. Publication stores only group identity, representative
-identity, and membership; it does not calculate member cosine similarities.
+earliest remaining member's versioned SHA-256-derived ID names the group, so a
+group keeps its identity and label as later articles join. The representative,
+whose title becomes the label name, is the member most similar to the others:
+the highest sum of cosine similarities to every member's unit-length embedding.
+Near-ties go to the earlier member, so a two-article group keeps its first
+title. Publication stores only group identity, representative identity, and
+membership; it does not store member cosine similarities.
 
 All groups are computed before a write transaction starts. Publication rechecks
 the generation and revision, atomically replaces group and membership tables

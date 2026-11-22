@@ -16,6 +16,8 @@ from .config import MINIMUM_GROUP_SIZE, PipelineSnapshot
 from .semantic_store import GroupingInput, PublishedGroup, SemanticStore
 
 LOGGER = logging.getLogger(__name__)
+# Cosine-sum scores closer than this count as tied (float rounding, not meaning).
+CENTRALITY_TIE_TOLERANCE = 1e-6
 
 
 class UnexpectedEncoder:
@@ -54,6 +56,7 @@ def groups_from_result(
     """Turn SemHash duplicate edges into deterministic connected groups."""
     order = {item.entry_id: (item.received_at, item.entry_id) for item in inputs}
     titles = {item.entry_id: item.normalized_title for item in inputs}
+    embeddings = {item.entry_id: item.embedding for item in inputs}
     parent = {item.entry_id: item.entry_id for item in inputs}
 
     def find(item: str) -> str:
@@ -100,11 +103,27 @@ def groups_from_result(
         if len(distinct_members) < MINIMUM_GROUP_SIZE:
             continue
         members = distinct_members
-        representative = members[0]
-        group_id = hashlib.sha256(("group-v1\0" + representative).encode()).hexdigest()[:32]
+        # The earliest member keys the group, so its label survives as members
+        # arrive; the most central member only names it.
+        group_id = hashlib.sha256(("group-v1\0" + members[0]).encode()).hexdigest()[:32]
+        representative = most_central(members, embeddings)
         groups.append(PublishedGroup(group_id, representative, tuple(members)))
-    groups.sort(key=lambda group: order[group.representative_entry_id])
+    groups.sort(key=lambda group: order[group.members[0]])
     return groups
+
+
+def most_central(members: Sequence[str], embeddings: dict[str, NDArray[np.float32]]) -> str:
+    """Return the member closest to the group's mean direction.
+
+    Members are in arrival order, and near-ties go to the earliest, so a
+    two-article group (always a tie) keeps its first title.
+    """
+    vectors = np.stack([embeddings[entry_id] for entry_id in members]).astype(np.float64)
+    norms = np.linalg.norm(vectors, axis=1, keepdims=True)
+    vectors /= np.where(norms == 0, 1, norms)
+    scores = vectors @ vectors.sum(axis=0)
+    best = int(np.flatnonzero(scores >= scores.max() - CENTRALITY_TIE_TOLERANCE)[0])
+    return members[best]
 
 
 def group(

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass
 
 import numpy as np
@@ -20,7 +21,7 @@ class Result:
     filtered: list[Duplicate]
 
 
-def test_result_conversion_uses_earliest_member_and_fixed_minimum_size() -> None:
+def test_two_article_groups_tie_on_centrality_and_keep_the_earliest_title() -> None:
     inputs = [
         GroupingInput("late", 20, "late", np.array([0.9, 0.1], dtype=np.float32)),
         GroupingInput("early", 10, "early", np.array([1.0, 0.0], dtype=np.float32)),
@@ -31,6 +32,33 @@ def test_result_conversion_uses_earliest_member_and_fixed_minimum_size() -> None
     assert len(groups) == 1
     assert groups[0].representative_entry_id == "early"
     assert list(groups[0].members) == ["early", "late"]
+
+
+def test_most_central_member_names_the_group_but_earliest_keys_it() -> None:
+    inputs = [
+        GroupingInput("edge-a", 10, "edge a", np.array([1.0, 0.0], dtype=np.float32)),
+        GroupingInput("center", 30, "center", np.array([0.7, 0.7], dtype=np.float32)),
+        GroupingInput("edge-b", 20, "edge b", np.array([0.0, 2.0], dtype=np.float32)),
+        GroupingInput("other-late", 40, "other late", np.array([0.0, -1.0], dtype=np.float32)),
+        GroupingInput("other-early", 5, "other early", np.array([0.0, -1.0], dtype=np.float32)),
+    ]
+    result = Result(
+        [
+            Duplicate({"entry_id": "center"}, [({"entry_id": "edge-a"}, 0.7)]),
+            Duplicate({"entry_id": "edge-b"}, [({"entry_id": "center"}, 0.7)]),
+            Duplicate({"entry_id": "other-late"}, [({"entry_id": "other-early"}, 1.0)]),
+        ]
+    )
+
+    groups = groups_from_result(result, inputs)
+
+    assert [group.members for group in groups] == [
+        ("other-early", "other-late"),
+        ("edge-a", "edge-b", "center"),
+    ]
+    chained = groups[1]
+    assert chained.representative_entry_id == "center"
+    assert chained.group_id == hashlib.sha256(b"group-v1\0edge-a").hexdigest()[:32]
 
 
 def test_singleton_components_are_not_published_as_groups() -> None:

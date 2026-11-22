@@ -194,10 +194,11 @@ same writer; cross-owner references are checked in application logic and tests.
 SemHash duplicate relationships are converted to connected components. Members
 are ordered by `(received_at, entry_id)`, then later members whose non-blank
 normalized title is already present in the component are excluded. Only the
-resulting components with at least two articles are published. The earliest
-remaining member is the representative, and the group ID is a versioned
-SHA-256-derived value based on that representative. Per-member similarity is not
-calculated or published.
+resulting components with at least two articles are published. The group ID is
+a versioned SHA-256-derived value based on the earliest remaining member. The
+representative, whose title names the label, is the member most similar to the
+rest of the group, with ties going to the earliest. Per-member similarity is not
+published.
 
 After complete worker publication, FreshRSS maintenance resolves representative
 titles through FreshRSS and reconciles each component into an extension-owned
