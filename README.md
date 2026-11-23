@@ -4,7 +4,8 @@ FreshRSS Semantic Grouping is a versioned pair: a FreshRSS user extension and
 an offline Python worker. The extension rejects exact normalized-title
 duplicates, exports one complete generation selected by a native FreshRSS saved
 query, and reconciles the last published semantic groups into native FreshRSS
-labels. The worker sees only the
+labels. Its Stories view gathers related groups into topics for reading. The
+worker sees only the
 shared semantic database; it never mounts or queries FreshRSS application data.
 
 The FreshRSS release it is tested against is `FRESHRSS_VERSION` in the

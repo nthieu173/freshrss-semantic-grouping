@@ -1,0 +1,187 @@
+<?php
+declare(strict_types=1);
+/** @var FreshRSS_View $this */
+if (!Minz_Request::paramBoolean('ajax')) {
+	$this->partial('aside_feed');
+	$this->partial('nav_menu');
+}
+
+$ctl = FreshExtension_stories_Controller::class;
+
+$ago = static function (int $timestamp): string {
+	$minutes = max(0, intdiv(time() - $timestamp, 60));
+	if ($minutes < 60) {
+		return $minutes . ' min';
+	}
+	if ($minutes < 48 * 60) {
+		return intdiv($minutes, 60) . ' h';
+	}
+	return intdiv($minutes, 24 * 60) . ' d';
+};
+$span = static function (int $first, int $last): string {
+	$hours = ($last - $first) / 3600;
+	if ($hours < 1) {
+		return 'within the hour';
+	}
+	return 'over ' . ($hours < 48 ? round($hours) . ' h' : round($hours / 24) . ' days');
+};
+$plural = static fn(int $n, string $word): string => $n . ' ' . ($n === 1 ? $word : (str_ends_with($word, 'story') ? substr($word, 0, -1) . 'ies' : $word . 's'));
+$labelUrl = static fn(int $labelId): string => Minz_Url::display(['c' => 'index', 'a' => 'normal', 'params' => ['get' => 't_' . $labelId]]);
+
+/** @param list<array{entry:FreshRSS_Entry,feed:FreshRSS_Feed}> $articles */
+$markReadForm = static function (array $articles, string $label): void {
+	$ids = [];
+	foreach ($articles as $article) {
+		if (!$article['entry']->isRead()) {
+			$ids[] = $article['entry']->id();
+		}
+	}
+	if ($ids === []) {
+		return;
+	} ?>
+	<form class="stories-mark-read" method="post" action="<?= Minz_Url::display(['c' => 'entry', 'a' => 'read']) ?>">
+		<input type="hidden" name="_csrf" value="<?= FreshRSS_Auth::csrfToken() ?>" />
+		<?php foreach ($ids as $id) { ?><input type="hidden" name="id[]" value="<?= $id ?>" /><?php } ?>
+		<button class="btn" type="submit"><?= _i('read') ?> <?= $label ?></button>
+	</form>
+<?php };
+$toggle = static fn(string $what): string => '<button class="stories-toggle" type="button" aria-expanded="true" title="Collapse or expand this ' . $what . '">' . _i('down') . '</button>';
+
+/** @param array{entry:FreshRSS_Entry,feed:FreshRSS_Feed} $article */
+$articleRow = static function (array $article) use ($ago): void {
+	$entry = $article['entry'];
+	$feed = $article['feed']; ?>
+	<li class="story-article<?= $entry->isRead() ? '' : ' unread' ?>" data-entry="<?= $entry->id() ?>">
+		<?php if (FreshRSS_Context::userConf()->show_favicons) { ?>
+			<img class="favicon" src="<?= $feed->favicon() ?>" alt="✇" loading="lazy" />
+		<?php } ?>
+		<span class="story-feed"><?= $feed->name() ?></span>
+		<a class="story-headline" target="_blank" rel="noreferrer" href="<?= $entry->link() ?>"><?= $entry->title() ?></a>
+		<time datetime="<?= date(DATE_ATOM, $entry->date(raw: true)) ?>" title="<?= timestamptodate($entry->date(raw: true)) ?>"><?= $ago($entry->date(raw: true)) ?></time>
+	</li>
+<?php };
+
+/** @param list<array{entry:FreshRSS_Entry,feed:FreshRSS_Feed}> $articles */
+$articleList = static function (array $articles) use ($articleRow): void { ?>
+	<ul class="box-content story-articles"><?php foreach ($articles as $article) { $articleRow($article); } ?></ul>
+<?php };
+
+$unreadCount = static fn(int $unread): string => $unread > 0
+	? '<span class="unread-count"><span class="story-unread">' . $unread . ' unread</span> · </span>'
+	: '';
+
+/** @param array<string,mixed> $story */
+$storyBox = static function (array $story, bool $nested) use ($articleList, $markReadForm, $toggle, $ago, $span, $plural, $labelUrl, $unreadCount): void {
+	$read = $story['unread'] === 0;
+	$label = is_int($story['label']) ? $story['label'] : 0; ?>
+	<section class="box story collapsible<?= $read ? ' story-read' : '' ?><?= $nested ? ' story-nested' : ' stories-item' ?>" data-key="<?= $story['key'] ?>" data-unread="<?= $story['unread'] ?>">
+		<header class="box-title collapsible-header">
+			<?= $toggle('story') ?>
+			<div class="collapsible-heading">
+				<?php if ($label > 0) { ?>
+				<a class="story-title" href="<?= $labelUrl($label) ?>"><?= $story['title'] ?></a>
+				<?php } else { ?>
+				<span class="story-title"><?= $story['title'] ?></span>
+				<?php } ?>
+				<div class="story-meta">
+					<?= $unreadCount($story['unread']) ?>
+					<?= $plural($story['count'], 'article') ?> from <?= $plural($story['sources'], 'source') ?>
+					· <?= $span($story['first'], $story['last']) ?> · updated <?= $ago($story['last']) ?> ago
+				</div>
+			</div>
+		</header>
+		<div class="collapsible-body">
+			<?php $articleList($story['articles']); ?>
+			<footer class="story-actions">
+				<?php if ($label > 0) { ?>
+				<a class="btn" href="<?= $labelUrl($label) ?>"><?= _i('view-normal') ?> Read the story</a>
+				<?php } ?>
+				<?php $markReadForm($story['articles'], 'Mark story read'); ?>
+			</footer>
+		</div>
+	</section>
+<?php };
+?>
+<main id="stream" class="semantic-stories">
+	<h1 class="title_hidden">Stories</h1>
+	<div class="stories-column content_<?= FreshRSS_Context::userConf()->content_width ?>">
+	<?php if ($ctl::$notice !== '') { ?>
+		<p class="stories-notice alert alert-warn"><?= $ctl::$notice ?></p>
+	<?php } elseif ($ctl::$firstPage) { ?>
+		<div class="stories-summary">
+			<strong><?= $plural($ctl::$topicCount, 'topic') ?></strong> holding
+			<?= $plural($ctl::$storyCount, 'story') ?>
+			· <strong><?= $plural($ctl::$standaloneCount, 'standalone story') ?></strong>
+			<?php if ($ctl::$singleLabelId > 0) { ?>
+			· <a href="<?= $labelUrl($ctl::$singleLabelId) ?>"><?= $ctl::$singleUnread ?> unread single articles</a>
+			<?php } ?>
+		</div>
+	<?php } ?>
+
+	<?php foreach ($ctl::$items as $item) {
+		if ($item['kind'] === 'story') {
+			$storyBox($item, false);
+			continue;
+		}
+		$topicArticles = array_merge($item['related'], ...array_map(static fn(array $story): array => $story['articles'], $item['stories']));
+		$looseUnread = count(array_filter($item['related'], static fn(array $article): bool => !$article['entry']->isRead()));
+		?>
+		<section class="topic stories-item collapsible" data-key="<?= $item['key'] ?>" data-unread="<?= $item['unread'] ?>">
+			<header class="topic-header collapsible-header">
+				<?= $toggle('topic') ?>
+				<div class="collapsible-heading">
+					<h2 class="topic-title"><?= $item['title'] ?></h2>
+					<div class="story-meta">
+						<?= $unreadCount($item['unread']) ?>
+						<?= $plural(count($item['stories']), 'story') ?> · <?= $plural($item['count'], 'article') ?> from <?= $plural($item['sources'], 'source') ?>
+						· <?= $span($item['first'], $item['last']) ?> · updated <?= $ago($item['last']) ?> ago
+					</div>
+				</div>
+				<?php $markReadForm($topicArticles, 'Mark topic read'); ?>
+			</header>
+			<div class="topic-stories collapsible-body">
+				<?php foreach ($item['stories'] as $story) { $storyBox($story, true); } ?>
+				<?php if ($item['related'] !== []) { ?>
+				<section class="box story story-nested topic-loose collapsible<?= $looseUnread === 0 ? ' story-read' : '' ?>" data-key="<?= $item['key'] ?>-loose" data-unread="<?= $looseUnread ?>">
+					<header class="box-title collapsible-header">
+						<?= $toggle('list') ?>
+						<div class="collapsible-heading">
+							<span class="story-title">Also in this topic</span>
+							<div class="story-meta">
+								<?= $unreadCount($looseUnread) ?>
+								<?= $plural(count($item['related']), 'article') ?> not part of any story
+							</div>
+						</div>
+					</header>
+					<div class="collapsible-body">
+						<?php $articleList($item['related']); ?>
+						<?php if ($looseUnread > 0) { ?>
+						<footer class="story-actions">
+							<?php $markReadForm($item['related'], 'Mark all read'); ?>
+						</footer>
+						<?php } ?>
+					</div>
+				</section>
+				<?php } ?>
+			</div>
+		</section>
+	<?php } ?>
+	<?php if ($ctl::$notice === '') {
+		$next = Minz_Request::currentRequest();
+		$next['params'][SemanticGrouping_StoryRepository::CURSOR] = (string)$ctl::$next;
+		unset($next['params']['ajax']);
+		$nextAjax = $next;
+		$nextAjax['params']['ajax'] = '1';
+		?>
+		<div class="stream-footer stories-footer" data-auto="<?= FreshRSS_Context::userConf()->auto_load_more ? '1' : '0' ?>">
+			<div class="stream-footer-inner">
+			<?php if ($ctl::$next !== null) { ?>
+				<a id="stories_load_more" class="btn" href="<?= Minz_Url::display($next) ?>" data-url="<?= Minz_Url::display($nextAjax) ?>"><?= _t('gen.stream.load_more') ?></a>
+			<?php } else { ?>
+				<?= _t('gen.stream.nothing_to_load') ?>
+			<?php } ?>
+			</div>
+		</div>
+	<?php } ?>
+	</div>
+</main>

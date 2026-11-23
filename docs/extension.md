@@ -12,7 +12,9 @@ release pinned in the `Makefile`. Its entry point registers:
 - a pipeline-disable path that publishes a disabled revision and removes only
   extension-owned labels;
 - uninstall cleanup based on native ownership attributes;
-- configuration and pipeline/label-sync status.
+- configuration and pipeline/label-sync status;
+- the Stories view: a `stories` controller and views, a `ViewModes` entry so it
+  can be the default view, and a `NavReadingModes` toolbar button.
 
 The extension is the only user-facing configuration surface. It stores schema-3
 settings through FreshRSS's per-user extension configuration API. A successful
@@ -141,5 +143,30 @@ The configuration page reports the selected source and definition fingerprint,
 export attempt/success, active generation and candidate count, worker
 attempt/success, label-sync attempt/success, pending work,
 model/window/thresholds, and the latest bounded error summary. It never exposes
-traces or host paths. Article ordering and presentation are entirely native
-FreshRSS behavior under **My labels**.
+traces or host paths. Under **My labels**, article ordering and presentation are
+entirely native FreshRSS behavior.
+
+## Stories view
+
+The Stories view (`?c=stories`) shows the worker's last complete publication as
+a two-level reading list. Topics come first, those with the most articles
+first; each holds its stories and, under **Also in this topic**, its related
+articles in no story. Stories in no topic follow, most recently received first.
+Each story lists its articles oldest first with source and age, links to its
+native label, and can be marked read. A topic can be marked read as a whole.
+Topics and stories collapse, and the collapsed ones are remembered in the
+browser's local storage. The view follows the reader's content width, unread
+filter and "auto load more" setting, and links to **Single articles**.
+
+`StoryRepository` reads groups, topics, their members and the label mapping in
+one read-only snapshot, holding only entry IDs. FreshRSS supplies the unread
+IDs from the window's oldest article on, and the page's articles are read in
+one query, so a page costs the same however large the window is. A page is ten
+topics or stories. Its cursor is a position in the full ordering, which reading
+does not change, so marking items read never shifts the next page. Marking read
+posts the article IDs to FreshRSS's own `entry/read` action. The view uses its
+own classes, so FreshRSS's mark-on-scroll and paging scripts leave it alone.
+
+Like the configuration page, the view reads the semantic database from the web
+server, so FreshRSS needs the shared GID described in the deployment guide. It
+shows a notice while the pipeline is disabled or the database cannot be read.

@@ -594,6 +594,42 @@ function verifyLabels(): void {
 	check(str_contains($rendered, htmlspecialchars($representative->title(), ENT_COMPAT, 'UTF-8')), 'Native My labels did not render the semantic group.');
 }
 
+function verifyStories(): void {
+	$extension = configuredExtension();
+	$database = semanticDatabase();
+	$representativeId = (string)$database->query('SELECT representative_entry_id FROM groups LIMIT 1')->fetchColumn();
+	$representative = iterator_to_array(FreshRSS_Factory::createEntryDao()->listByIds([$representativeId]), false)[0] ?? null;
+	check($representative instanceof FreshRSS_Entry, 'Published representative was not found in FreshRSS');
+	$topicIds = $database->query('SELECT representative_entry_id FROM topics')->fetchAll(PDO::FETCH_COLUMN);
+
+	Minz_Session::_param('passwordHash', FreshRSS_Context::userConf()->passwordHash);
+	check(FreshRSS_Auth::giveAccess(), 'Could not authenticate the Stories view render.');
+	require_once $extension->getPath() . '/Controllers/storiesController.php';
+	$previousRequest = Minz_Request::currentRequest();
+	try {
+		Minz_Request::_controllerName('stories');
+		Minz_Request::_actionName('index');
+		Minz_Request::_params(['state' => (string)FreshRSS_Entry::STATE_ALL]);
+		$controller = new FreshExtension_stories_Controller();
+		$controller->indexAction();
+		$view = $controller->view();
+		// The layout runs this before the sidebar; renderToString() does not.
+		($view->callbackBeforeFeeds)($view);
+		$rendered = $view->renderToString();
+	} finally {
+		Minz_Request::_controllerName($previousRequest['c']);
+		Minz_Request::_actionName($previousRequest['a']);
+		Minz_Request::_params($previousRequest['params']);
+	}
+
+	check(str_contains($rendered, 'class="semantic-stories"') && str_contains($rendered, 'id="aside_feed"'), 'The Stories view did not render inside the reader.');
+	check(!str_contains($rendered, 'stories-notice'), 'The Stories view reported its publication unavailable.');
+	check(str_contains($rendered, 'class="box story collapsible'), 'The Stories view did not render the semantic group as a story.');
+	check(str_contains($rendered, 'data-entry="' . $representativeId . '"'), 'The Stories view did not list the story\'s articles.');
+	check(str_contains($rendered, htmlspecialchars($representative->title(), ENT_COMPAT, 'UTF-8')) || str_contains($rendered, $representative->title()), 'The Stories view did not name the story after its representative.');
+	same(substr_count($rendered, 'class="topic stories-item'), count($topicIds), 'The Stories view did not render each published topic.');
+}
+
 function createConflict(): void {
 	$extension = configuredExtension();
 	$state = fixture();
@@ -804,6 +840,9 @@ try {
 			break;
 		case 'verify-labels':
 			verifyLabels();
+			break;
+		case 'verify-stories':
+			verifyStories();
 			break;
 		case 'create-conflict':
 			createConflict();

@@ -136,6 +136,7 @@ fi
 
 worker run
 fresh_test verify-labels
+fresh_test verify-stories
 
 fresh_test create-conflict
 worker embed

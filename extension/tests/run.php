@@ -185,6 +185,7 @@ require_once __DIR__ . '/../xExtension-SemanticGrouping/Models/ExactTitleFilter.
 require_once __DIR__ . '/../xExtension-SemanticGrouping/Models/SemanticDatabase.php';
 require_once __DIR__ . '/../xExtension-SemanticGrouping/Models/GroupRepository.php';
 require_once __DIR__ . '/../xExtension-SemanticGrouping/Models/LabelReconciler.php';
+require_once __DIR__ . '/../xExtension-SemanticGrouping/Models/StoryRepository.php';
 
 FreshRSS_Context::$search = new FreshRSS_BooleanSearch('');
 
@@ -581,11 +582,54 @@ function exerciseDatabase(SemanticGrouping_SemanticDatabase $database): PDO {
 	return $pdo;
 }
 
+/** The Stories view's publication read, which every storage backend must pass. */
+function exerciseStories(SemanticGrouping_SemanticDatabase $database, PDO $pdo): void {
+	foreach (['topic_members', 'topics', 'group_members', 'groups', 'managed_labels'] as $table) {
+		$pdo->exec("DELETE FROM {$table}");
+	}
+	$pdo->exec("UPDATE pipeline_config SET config_json = '{\"enabled\":false}'");
+	check((new SemanticGrouping_StoryRepository($database))->load() === null, 'a disabled pipeline published stories');
+	$pdo->exec("UPDATE pipeline_config SET config_json = '{\"enabled\":true}'");
+	$empty = (new SemanticGrouping_StoryRepository($database))->load();
+	check($empty === ['groups' => [], 'topics' => [], 'labels' => []], 'an empty publication was not empty');
+	$pdo->exec("INSERT INTO groups VALUES ('ga', '12', 1, 'f', 0), ('gb', '30', 1, 'f', 0), ('gc', '50', 1, 'f', 0)");
+	$pdo->exec("INSERT INTO group_members(group_id, entry_id) VALUES ('ga', '10'), ('ga', '12'), ('gb', '30'), ('gb', '31'), ('gc', '50'), ('gc', '51')");
+	$pdo->exec("INSERT INTO topics VALUES ('t', '30', 1, 'f', 0)");
+	$pdo->exec("INSERT INTO topic_members VALUES ('t', '10'), ('t', '12'), ('t', '30'), ('t', '31'), ('t', '20')");
+	$pdo->exec("INSERT INTO managed_labels VALUES ('ga', 7, 'A', 1, 0), ('single-articles', 9, 'Single articles', 1, 0)");
+	$publication = (new SemanticGrouping_StoryRepository($database))->load();
+	check($publication !== null, 'a publication was not read');
+	check($publication['groups']['ga'] === ['representative' => '12', 'members' => ['10', '12']], 'a story was not read with its members');
+	check($publication['topics']['t']['members'] === ['10', '12', '20', '30', '31'], 'a topic was not read with its members');
+	check($publication['labels'] === ['ga' => 7, 'single-articles' => 9], 'story labels were not read');
+
+	$page = SemanticGrouping_StoryRepository::arrange($publication, ['31' => true, '20' => true], false, 0, 10);
+	check(array_column($page['items'], 'id') === ['t', 'gc'], 'topics did not come before stories in no topic');
+	$topic = $page['items'][0];
+	check(array_column($topic['stories'], 'id') === ['gb', 'ga'], 'a topic did not hold its stories, latest first');
+	check($topic['loose'] === ['20'] && $topic['count'] === 5 && $topic['unread'] === 2, 'a topic did not count its related articles');
+	check($topic['stories'][1]['label'] === 7 && $page['items'][1]['label'] === null, 'stories were not linked to their labels');
+	check([$page['topics'], $page['stories'], $page['standalone'], $page['next']] === [1, 2, 1, null], 'the page summary was wrong');
+
+	// Read items are skipped, but positions stay those of the full ordering,
+	// so items read on one page never shift the next.
+	$unreadOnly = SemanticGrouping_StoryRepository::arrange($publication, ['51' => true], true, 0, 10);
+	check(array_column($unreadOnly['items'], 'id') === ['gc'] && $unreadOnly['topics'] === 0, 'read items were not skipped');
+	$first = SemanticGrouping_StoryRepository::arrange($publication, [], false, 0, 1);
+	check(array_column($first['items'], 'id') === ['t'] && $first['next'] === 1, 'a page did not stop at its size');
+	$second = SemanticGrouping_StoryRepository::arrange($publication, ['51' => true], true, 1, 1);
+	check(array_column($second['items'], 'id') === ['gc'] && $second['next'] === null, 'the next page did not continue from its position');
+	foreach (['topic_members', 'topics', 'group_members', 'groups', 'managed_labels'] as $table) {
+		$pdo->exec("DELETE FROM {$table}");
+	}
+}
+
 $directory = sys_get_temp_dir() . '/semantic-php-' . bin2hex(random_bytes(6));
 mkdir($directory, 0770, true);
 $path = $directory . '/semantic.sqlite';
 $database = new SemanticGrouping_SemanticDatabase($path, '');
 $pdo = exerciseDatabase($database);
+exerciseStories($database, $pdo);
 
 $migratedSchema = $pdo->query("SELECT type, name, sql FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' ORDER BY type, name")->fetchAll(PDO::FETCH_ASSOC);
 $fixturePath = $directory . '/fixture.sqlite';
@@ -737,6 +781,7 @@ if (is_string($postgresUrl) && $postgresUrl !== '') {
 			check(str_contains($error->getMessage(), 'has not been created'), 'empty PostgreSQL schema was misreported');
 		}
 		$pgPdo = exerciseDatabase($postgres);
+		exerciseStories($postgres, $pgPdo);
 		check($postgres->open(true) instanceof PDO, 'repeated PostgreSQL migration was not idempotent');
 
 		$describe = static function (PDO $db, string $name): array {

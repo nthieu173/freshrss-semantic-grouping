@@ -23,6 +23,7 @@ The initial scope is one configured FreshRSS user and includes:
 - average-linkage topics that gather related groups and ungrouped articles;
 - representative titles chosen once per distinct normalized title;
 - native FreshRSS labels for semantic groups and single articles;
+- a Stories view in FreshRSS that reads topics, their stories and articles;
 - extension-owned full reset and worker-owned derived-data rebuild;
 - separate embedding and grouping processes under a 512 MiB worker limit.
 
@@ -220,6 +221,11 @@ titles through FreshRSS and reconciles each component into an extension-owned
 native label. Candidates outside every multi-article component receive the fixed
 **Single articles** label. Ownership is recorded in label attributes and in the
 semantic database; personal labels are never renamed, populated, or deleted.
+
+The extension's Stories view reads the same publication directly: topics with
+their stories and related articles, then stories in no topic, with the
+articles' read state, sources and links taken from FreshRSS. It changes nothing
+but read state, through FreshRSS's own action.
 
 ## Security, privacy, and recovery
 

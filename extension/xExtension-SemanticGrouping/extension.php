@@ -45,6 +45,32 @@ final class SemanticGroupingExtension extends Minz_Extension {
 		FreshRSS_View::appendStyle($this->getFileUrl('configure.css'));
 		$this->registerHook(Minz_HookType::EntryBeforeAdd, [$this, 'entryBeforeAdd']);
 		$this->registerHook(Minz_HookType::FreshrssUserMaintenance, [$this, 'userMaintenance']);
+		// The Stories view: a toolbar reading mode, and a choice of default view.
+		$this->registerController('stories');
+		$this->registerViews();
+		$this->registerHook(Minz_HookType::ViewModes, [$this, 'viewModes']);
+		$this->registerHook(Minz_HookType::NavReadingModes, [$this, 'navReadingModes']);
+	}
+
+	/** @param array<FreshRSS_ViewMode> $modes @return array<FreshRSS_ViewMode> */
+	public function viewModes(array $modes): array {
+		$modes[] = new FreshRSS_ViewMode('stories', 'Stories', 'stories', 'index');
+		return $modes;
+	}
+
+	/** @param array<FreshRSS_ReadingMode> $modes @return array<FreshRSS_ReadingMode> */
+	public function navReadingModes(array $modes): array {
+		$params = Minz_Request::currentRequest()['params'] ?? [];
+		unset($params[SemanticGrouping_StoryRepository::CURSOR], $params['ajax']);
+		$mode = new FreshRSS_ReadingMode(
+			'view-stories',
+			'Stories view',
+			['c' => 'stories', 'a' => 'index', 'params' => $params],
+			Minz_Request::controllerName() === 'stories',
+		);
+		$mode->setName('<img class="icon" src="' . $this->getFileUrl('stories.svg') . '" alt="▤" loading="lazy" />');
+		$modes[] = $mode;
+		return $modes;
 	}
 
 	#[\Override]
