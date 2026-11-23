@@ -2,22 +2,16 @@ ARG PYTHON_IMAGE=python:3.14-slim-trixie
 ARG UV_IMAGE=ghcr.io/astral-sh/uv:latest
 
 FROM ${UV_IMAGE} AS uv
+
+# The dependency inputs with the release version blanked out. COPY --from is
+# cached by content, so a release that changes only the version keeps the
+# dependency and model layers below.
+FROM ${PYTHON_IMAGE} AS dependency-inputs
+COPY worker/pyproject.toml worker/uv.lock /inputs/
+RUN sed -i '0,/^version = /s/^version = .*/version = "0"/' /inputs/pyproject.toml \
+	&& sed -i '/^name = "freshrss-semantic-grouping"$/{n;s/^version = .*/version = "0"/}' /inputs/uv.lock
+
 FROM ${PYTHON_IMAGE}
-
-ARG VERSION=0.16.0
-ARG REVISION=unknown
-ARG SOURCE=https://github.com/example/freshrss-semantic-grouping
-ARG POTION_BASE_32M_REVISION=1e5a03f8eeb2c98b928fbbd846f22f816360919f
-ARG POTION_BASE_8M_REVISION=bf8b056651a2c21b8d2565580b8569da283cab23
-
-LABEL org.opencontainers.image.title="FreshRSS semantic grouping worker" \
-      org.opencontainers.image.description="Offline Model2Vec and SemHash worker for FreshRSS" \
-      org.opencontainers.image.source="${SOURCE}" \
-      org.opencontainers.image.revision="${REVISION}" \
-      org.opencontainers.image.version="${VERSION}" \
-      org.opencontainers.image.licenses="GPL-3.0" \
-      io.freshrss.semantic.model.potion-base-32m.revision="${POTION_BASE_32M_REVISION}" \
-      io.freshrss.semantic.model.potion-base-8m.revision="${POTION_BASE_8M_REVISION}"
 
 # TOKENIZERS_PARALLELISM is a setting, not a secret.
 # hadolint ignore=DL3064
@@ -33,18 +27,41 @@ ENV PATH="/app/worker/.venv/bin:${PATH}" \
 
 COPY --from=uv /uv /usr/local/bin/uv
 WORKDIR /app
-COPY README.md /app/README.md
-COPY worker/pyproject.toml worker/uv.lock worker/README.md /app/worker/
-RUN uv sync --project /app/worker --locked --no-dev --no-install-project \
-	&& uv cache clean \
-	&& mkdir -p /opt/models \
+
+# Dependencies only, from the version-free inputs. The cache mount keeps
+# downloaded wheels between builds on the same host without adding them to
+# the image.
+COPY --from=dependency-inputs /inputs/ /app/worker/
+RUN --mount=type=cache,target=/tmp/.cache/uv \
+	uv sync --project /app/worker --locked --no-dev --no-install-project
+
+# The bundled models: rebuilt only when a revision or the dependencies change.
+ARG POTION_BASE_32M_REVISION=1e5a03f8eeb2c98b928fbbd846f22f816360919f
+ARG POTION_BASE_8M_REVISION=bf8b056651a2c21b8d2565580b8569da283cab23
+RUN mkdir -p /opt/models \
 	&& POTION_BASE_32M_REVISION="${POTION_BASE_32M_REVISION}" POTION_BASE_8M_REVISION="${POTION_BASE_8M_REVISION}" python -c 'import os; from huggingface_hub import snapshot_download; from model2vec import StaticModel; [StaticModel.from_pretrained(snapshot_download(f"minishlab/{name}", revision=os.environ[variable], allow_patterns=["README.md", "config.json", "model.safetensors", "modules.json", "tokenizer.json"])).save_pretrained(f"/opt/models/{name}") for name, variable in (("potion-base-32M", "POTION_BASE_32M_REVISION"), ("potion-base-8M", "POTION_BASE_8M_REVISION"))]' \
 	&& chmod -R a+rX /opt/models \
 	&& rm -rf /tmp/huggingface /tmp/.cache
+
+# The worker itself, with the real version.
+COPY worker/pyproject.toml worker/uv.lock worker/README.md /app/worker/
 COPY worker/src /app/worker/src
-RUN uv sync --project /app/worker --locked --no-dev --no-editable \
-    && uv cache clean \
-    && useradd --uid 10001 --gid 33 --home-dir /nonexistent --no-create-home --shell /usr/sbin/nologin semantic-worker
+RUN --mount=type=cache,target=/tmp/.cache/uv \
+	uv sync --project /app/worker --locked --no-dev --no-editable \
+	&& useradd --uid 10001 --gid 33 --home-dir /nonexistent --no-create-home --shell /usr/sbin/nologin semantic-worker
+
+# Release metadata last, so it never invalidates a layer above.
+ARG VERSION=0.16.0
+ARG REVISION=unknown
+ARG SOURCE=https://github.com/example/freshrss-semantic-grouping
+LABEL org.opencontainers.image.title="FreshRSS semantic grouping worker" \
+      org.opencontainers.image.description="Offline Model2Vec and SemHash worker for FreshRSS" \
+      org.opencontainers.image.source="${SOURCE}" \
+      org.opencontainers.image.revision="${REVISION}" \
+      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.licenses="GPL-3.0" \
+      io.freshrss.semantic.model.potion-base-32m.revision="${POTION_BASE_32M_REVISION}" \
+      io.freshrss.semantic.model.potion-base-8m.revision="${POTION_BASE_8M_REVISION}"
 
 USER 10001:33
 WORKDIR /semantic-data
