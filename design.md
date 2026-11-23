@@ -21,7 +21,7 @@ The initial scope is one configured FreshRSS user and includes:
 - cached Model2Vec float32 embeddings;
 - SemHash grouping through its USearch backend;
 - average-linkage topics that gather related groups and ungrouped articles;
-- normalized-title deduplication within potential semantic groups;
+- representative titles chosen once per distinct normalized title;
 - native FreshRSS labels for semantic groups and single articles;
 - extension-owned full reset and worker-owned derived-data rebuild;
 - separate embedding and grouping processes under a 512 MiB worker limit.
@@ -132,8 +132,8 @@ observe the previous complete publication or the new complete publication.
 ## Canonical inputs and invalidation
 
 The extension HTML-decodes, strips markup, normalizes Unicode and whitespace,
-and truncates on a character boundary. It stores the normalized title used for
-within-group deduplication plus the configured canonical `embedding_text`, not
+and truncates on a character boundary. It stores the normalized title used to
+name groups plus the configured canonical `embedding_text`, not
 another full article copy. SHA-256 covers a versioned, length-delimited
 serialization of the selected embedding fields.
 

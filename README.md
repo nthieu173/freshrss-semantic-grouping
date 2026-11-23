@@ -29,8 +29,8 @@ FreshRSS entries + saved query
  FreshRSS My labels  Model2Vec -> SemHash/USearch
 ```
 
-Only exact-title duplicates are rejected during ingestion. Within each potential
-semantic group, only the earliest article for a normalized title is retained.
+Only exact-title duplicates are rejected during ingestion. A syndicated copy
+that survives it stays in its semantic group as another source.
 Semantic grouping adds and removes extension-owned native label assignments; it
 does not mark or delete FreshRSS entries and never changes personal labels.
 
