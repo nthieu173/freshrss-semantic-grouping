@@ -19,6 +19,15 @@ FreshRSS application data into the worker. Add supplementary GID 33 to the
 FreshRSS container when its web/maintenance user has a different primary group;
 the setgid directory then gives both containers group-owned `0660` files.
 
+Web requests read the database too: the Stories view and the status on the
+extension's configuration page. In the Debian-based FreshRSS image the web user
+`www-data` already has GID 33. In the Alpine image, Apache starts its workers
+as `apache` with only that user's groups from `/etc/group`, so a container-level
+`--group-add 33` reaches maintenance and CLI runs but not web requests, and the
+view reports the database unavailable. There, add `apache` to a GID 33 group in
+a derived image, or use [PostgreSQL storage](#postgresql-storage), which needs
+no shared files.
+
 The worker image runs as UID 10001 with primary GID 33, has no network listener,
 and expects a read-only root filesystem plus a small writable `/tmp` tmpfs. The
 default `minishlab/potion-base-32M` and the earlier default
@@ -98,6 +107,19 @@ podman run --rm \
 The run is still a successful no-op until the extension has created the schema.
 See [the database contract](database.md#postgresql) for locking and reset.
 
+## Upgrades
+
+The extension and worker are released as a pair. Stop the worker timer, install
+both, then enable the extension (or run `cli/migrate.php` as the FreshRSS user)
+so it migrates the schema in one transaction, and start the worker again. The
+worker refuses any schema but its own, so it never runs against a half-upgraded
+database. A migration expires the producer lease, so the next maintenance pass
+republishes candidates and the worker regroups once; until then the previous
+labels and stories stay visible.
+
+SQLite databases migrate from any earlier schema. PostgreSQL databases, which
+started at schema 3, migrate from schema 3 onwards.
+
 ## Failure behavior
 
 - A semantic storage or saved-query error is logged and swallowed by the
@@ -109,7 +131,10 @@ See [the database contract](database.md#postgresql) for locking and reset.
   affected group, uses **Single articles** for its available candidates, and
   records a bounded synchronization error.
 - Incomplete or failed worker publication leaves all prior native semantic
-  labels in place.
+  labels, stories and topics in place.
+- The Stories view shows a notice instead of stories while the pipeline is
+  disabled or the semantic database cannot be read; the rest of FreshRSS is
+  unaffected.
 
 FreshRSS invokes user maintenance before the current feed actualization.
 Newly fetched articles are therefore normally included on the following

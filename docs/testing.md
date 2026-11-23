@@ -65,6 +65,8 @@ The integration scenario verifies:
   model, and groups through SemHash/USearch;
 - native semantic labels render in the authenticated FreshRSS **My labels**
   sidebar and use the representative title;
+- the authenticated Stories view renders inside the reader with each
+  published story, its articles and every published topic;
 - an article source change replaces only its stale embedding;
 - a query edit retains old labels until an atomic replacement is ready;
 - membership changes and group retirement update only extension-owned labels;
