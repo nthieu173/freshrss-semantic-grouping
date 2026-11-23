@@ -1,4 +1,4 @@
-"""SemHash grouping over precomputed active-generation embeddings."""
+"""SemHash grouping over precomputed active-generation embeddings, then topics."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from .config import MINIMUM_GROUP_SIZE, PipelineSnapshot
-from .semantic_store import GroupingInput, PublishedGroup, SemanticStore
+from .semantic_store import GroupingInput, PublishedGroup, PublishedTopic, SemanticStore
 
 LOGGER = logging.getLogger(__name__)
 # Cosine-sum scores closer than this count as tied (float rounding, not meaning).
@@ -136,6 +136,95 @@ def _mean_direction(vectors: Sequence[NDArray[np.float32]]) -> NDArray[np.float6
     return mean / length if length > 0 else mean
 
 
+def topics_from_groups(
+    inputs: Sequence[GroupingInput],
+    groups: Sequence[PublishedGroup],
+    threshold: float,
+) -> list[PublishedTopic]:
+    """Gather related groups and ungrouped articles into topics.
+
+    Units are the groups and every article in no group. Average linkage merges
+    the two units, or merged clusters, whose articles are most alike on
+    average, while that average cosine is at least ``threshold``. A cluster
+    becomes a topic when it holds at least two units, one of them a group: a
+    lone group is already a story, and articles with no group are not a topic
+    by themselves. Ties go to the earliest units.
+    """
+    if not inputs or not groups:
+        return []
+    order = {item.entry_id: (item.received_at, item.entry_id) for item in inputs}
+    embeddings = {item.entry_id: item.embedding for item in inputs}
+    titles = {item.entry_id: item.normalized_title for item in inputs}
+    grouped = {entry_id for group in groups for entry_id in group.members}
+    # (members, is a group), earliest first, so ties go to earlier units.
+    units = [(group.members, True) for group in groups]
+    units += [((item.entry_id,), False) for item in inputs if item.entry_id not in grouped]
+    units.sort(key=lambda unit: min(order[entry_id] for entry_id in unit[0]))
+
+    # For unit-length vectors, the mean cosine between the articles of two
+    # units is the dot product of their mean vectors. float32 keeps the
+    # unit-by-unit matrix at 4 bytes a cell.
+    means = np.empty((len(units), inputs[0].embedding.shape[0]), dtype=np.float32)
+    for index, (members, _) in enumerate(units):
+        stacked = np.stack([embeddings[entry_id] for entry_id in members]).astype(np.float32)
+        norms = np.linalg.norm(stacked, axis=1, keepdims=True)
+        means[index] = (stacked / np.where(norms == 0, 1, norms)).mean(axis=0)
+    similarity = means @ means.T
+    del means
+    sizes = np.array([len(members) for members, _ in units], dtype=np.float64)
+    np.fill_diagonal(similarity, -np.inf)
+    best = similarity.max(axis=1)
+    partner = similarity.argmax(axis=1)
+    clusters: list[list[int]] = [[index] for index in range(len(units))]
+
+    while True:
+        left = int(best.argmax())
+        if not best[left] >= threshold:
+            break
+        right = int(partner[left])
+        keep, gone = min(left, right), max(left, right)
+        # Lance-Williams update for average linkage, weighted by article count.
+        merged = (
+            sizes[keep] * similarity[keep].astype(np.float64)
+            + sizes[gone] * similarity[gone].astype(np.float64)
+        ) / (sizes[keep] + sizes[gone])
+        merged[[keep, gone]] = -np.inf
+        similarity[keep] = merged
+        similarity[:, keep] = merged
+        similarity[gone] = -np.inf
+        similarity[:, gone] = -np.inf
+        sizes[keep] += sizes[gone]
+        clusters[keep] += clusters[gone]
+        clusters[gone] = []
+        best[gone] = -np.inf
+        # A merged similarity lies between the two it replaces, so only rows
+        # whose best partner was one of the merged units can change their best.
+        stale = np.flatnonzero((partner == keep) | (partner == gone))
+        for index in [keep, *stale.tolist()]:
+            if clusters[index]:
+                partner[index] = int(similarity[index].argmax())
+                best[index] = similarity[index, partner[index]]
+        improved = np.flatnonzero(merged > best)
+        improved = improved[improved != keep]
+        best[improved] = merged[improved]
+        partner[improved] = keep
+
+    topics: list[PublishedTopic] = []
+    for members_of in clusters:
+        if len(members_of) < 2 or not any(units[index][1] for index in members_of):
+            continue
+        articles = sorted(
+            (entry_id for index in members_of for entry_id in units[index][0]),
+            key=order.__getitem__,
+        )
+        topic_id = hashlib.sha256(("topic-v1\0" + articles[0]).encode()).hexdigest()[:32]
+        topics.append(
+            PublishedTopic(topic_id, most_central(articles, embeddings, titles), tuple(articles))
+        )
+    topics.sort(key=lambda topic: order[topic.members[0]])
+    return topics
+
+
 def group(
     store: SemanticStore,
     semhash_factory: Callable[[NDArray[np.float32], list[dict[str, str]]], Any] = _semhash,
@@ -156,6 +245,7 @@ def _group(
         store.require_live(snapshot)
         store.set_state("last_attempted_group", str(int(time.time())), db)
         inputs = store.load_grouping_inputs(db, snapshot)
+    topics: list[PublishedTopic] = []
     if not inputs:
         groups: list[PublishedGroup] = []
         dimensions = 0
@@ -166,13 +256,16 @@ def _group(
             threshold=snapshot.config.similarity_threshold
         )
         groups = groups_from_result(result, inputs)
-        dimensions = int(matrix.shape[1])
-    store.publish_groups(snapshot, groups)
+        del result, matrix
+        topics = topics_from_groups(inputs, groups, snapshot.config.topic_threshold)
+        dimensions = int(inputs[0].embedding.shape[0])
+    store.publish_groups(snapshot, groups, topics)
     LOGGER.info(
-        "grouped entries=%d groups=%d dimensions=%d window_hours=%d "
+        "grouped entries=%d groups=%d topics=%d dimensions=%d window_hours=%d "
         "duration_seconds=%.3f peak_rss_mib=%.1f",
         len(inputs),
         len(groups),
+        len(topics),
         dimensions,
         snapshot.config.window_hours,
         time.monotonic() - started,

@@ -20,6 +20,7 @@ The initial scope is one configured FreshRSS user and includes:
 - title and optional truncated-content embedding input;
 - cached Model2Vec float32 embeddings;
 - SemHash grouping through its USearch backend;
+- average-linkage topics that gather related groups and ungrouped articles;
 - normalized-title deduplication within potential semantic groups;
 - native FreshRSS labels for semantic groups and single articles;
 - extension-owned full reset and worker-owned derived-data rebuild;
@@ -77,7 +78,7 @@ The extension is authoritative for:
 The worker is authoritative for:
 
 - cached embeddings;
-- published group and membership rows;
+- published group, topic and membership rows;
 - worker phase status and errors;
 - cleanup and rebuild of worker-owned derived rows.
 
@@ -125,8 +126,8 @@ incomplete generations.
 For grouping, the worker snapshots `(active_generation, config_revision)`,
 computes outside a write transaction, then checks the snapshot again in the
 publication transaction. A changed generation or revision aborts publication.
-One transaction replaces all group and membership rows, so readers observe the
-previous complete publication or the new complete publication.
+One transaction replaces all group, topic and membership rows, so readers
+observe the previous complete publication or the new complete publication.
 
 ## Canonical inputs and invalidation
 
@@ -204,6 +205,15 @@ headline carried by several feeds is not favoured for its copies. The title
 most similar to the group's other titles wins, ties go to the earliest, and its
 earliest article is the representative. Titles only name groups; they never
 decide membership. Per-member similarity is not published.
+
+Topics are broader than groups. Each group, and each article in no group, is a
+unit; average linkage repeatedly merges the two clusters whose articles have
+the highest mean cosine similarity, while that mean is at least the topic
+threshold (below the similarity threshold). A cluster of at least two units,
+one of them a group, is published as a topic whose members are all its
+articles. A lone group stays a story on its own, and ungrouped articles never
+form a topic without a group. The topic ID derives from its earliest article,
+and its representative is chosen the same way as a group's.
 
 After complete worker publication, FreshRSS maintenance resolves representative
 titles through FreshRSS and reconciles each component into an extension-owned

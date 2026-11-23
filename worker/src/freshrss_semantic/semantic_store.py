@@ -264,6 +264,15 @@ class PublishedGroup:
     members: tuple[str, ...]
 
 
+@dataclass(frozen=True)
+class PublishedTopic:
+    """Related groups and ungrouped articles; members are articles."""
+
+    topic_id: str
+    representative_entry_id: str
+    members: tuple[str, ...]
+
+
 def _safe_error(error: BaseException) -> str:
     """Keep state useful without publishing traces or host paths to the UI."""
     text = re.sub(r"(?:[A-Za-z]:)?[/\\][^\s:]+", "<path>", str(error))
@@ -601,7 +610,12 @@ class SemanticStore:
             output.append(GroupingInput(str(row[0]), int(row[1]), str(row[2]), vector))
         return output
 
-    def publish_groups(self, snapshot: PipelineSnapshot, groups: Sequence[PublishedGroup]) -> None:
+    def publish_groups(
+        self,
+        snapshot: PipelineSnapshot,
+        groups: Sequence[PublishedGroup],
+        topics: Sequence[PublishedTopic],
+    ) -> None:
         now = int(time.time())
         group_rows = [
             (
@@ -614,8 +628,23 @@ class SemanticStore:
             for group in groups
         ]
         member_rows = [(group.group_id, entry_id) for group in groups for entry_id in group.members]
+        topic_rows = [
+            (
+                topic.topic_id,
+                topic.representative_entry_id,
+                snapshot.active_generation,
+                snapshot.config.grouping_fingerprint,
+                now,
+            )
+            for topic in topics
+        ]
+        topic_member_rows = [
+            (topic.topic_id, entry_id) for topic in topics for entry_id in topic.members
+        ]
         with self.connection() as db, self.transaction(db):
             self.assert_snapshot(db, snapshot)
+            db.execute("DELETE FROM topic_members")
+            db.execute("DELETE FROM topics")
             db.execute("DELETE FROM group_members")
             db.execute("DELETE FROM groups")
             db.executemany(
@@ -630,11 +659,24 @@ class SemanticStore:
             db.executemany(
                 "INSERT INTO group_members(group_id, entry_id) VALUES (?, ?)", member_rows
             )
+            db.executemany(
+                """
+                INSERT INTO topics(
+                    topic_id, representative_entry_id, selection_generation,
+                    grouping_fingerprint, generated_at
+                ) VALUES (?, ?, ?, ?, ?)
+                """,
+                topic_rows,
+            )
+            db.executemany(
+                "INSERT INTO topic_members(topic_id, entry_id) VALUES (?, ?)", topic_member_rows
+            )
             self.set_states(
                 {
                     "last_published_generation": str(snapshot.active_generation),
                     "last_successful_group": str(now),
                     "current_group_count": str(len(groups)),
+                    "current_topic_count": str(len(topics)),
                     "current_grouping_fingerprint": snapshot.config.grouping_fingerprint,
                     "latest_error": "",
                 },

@@ -6,8 +6,14 @@ from dataclasses import dataclass
 import numpy as np
 from test_embeddings import assert_database_is_free
 
-from freshrss_semantic.grouping import UnexpectedEncoder, _semhash, group, groups_from_result
-from freshrss_semantic.semantic_store import GroupingInput, SemanticStore
+from freshrss_semantic.grouping import (
+    UnexpectedEncoder,
+    _semhash,
+    group,
+    groups_from_result,
+    topics_from_groups,
+)
+from freshrss_semantic.semantic_store import GroupingInput, PublishedGroup, SemanticStore
 
 
 @dataclass
@@ -153,6 +159,102 @@ def test_two_copies_of_one_article_form_a_group() -> None:
     groups = groups_from_result(result, inputs)
 
     assert [list(group.members) for group in groups] == [["original", "duplicate"]]
+
+
+def _at(entry_id: str, received_at: int, degrees: float, title: str = "") -> GroupingInput:
+    angle = np.radians(degrees)
+    vector = np.array([np.cos(angle), np.sin(angle)], dtype=np.float32)
+    return GroupingInput(entry_id, received_at, title or entry_id, vector)
+
+
+def _group(*members: str) -> PublishedGroup:
+    return PublishedGroup(f"group-{members[0]}", members[0], members)
+
+
+def test_two_stories_share_a_topic_by_their_average_similarity() -> None:
+    inputs = [_at("a1", 10, 0), _at("a2", 20, 10), _at("b1", 30, 40), _at("b2", 40, 50)]
+    groups = [_group("a1", "a2"), _group("b1", "b2")]
+    # The four cross-story cosines average cos 30-50 degrees, about 0.76.
+    topics = topics_from_groups(inputs, groups, 0.70)
+    assert [topic.members for topic in topics] == [("a1", "a2", "b1", "b2")]
+    assert topics[0].topic_id == hashlib.sha256(b"topic-v1\0a1").hexdigest()[:32]
+    assert topics_from_groups(inputs, groups, 0.80) == []
+
+
+def test_a_related_article_in_no_story_joins_the_topic() -> None:
+    inputs = [_at("a1", 10, 0), _at("a2", 20, 10), _at("loose", 5, 30), _at("far", 30, 120)]
+    topics = topics_from_groups(inputs, [_group("a1", "a2")], 0.80)
+    assert [topic.members for topic in topics] == [("loose", "a1", "a2")]
+    # The earliest article keys the topic, even when it is in no story.
+    assert topics[0].topic_id == hashlib.sha256(b"topic-v1\0loose").hexdigest()[:32]
+
+
+def test_related_articles_in_no_story_are_not_a_topic_by_themselves() -> None:
+    inputs = [_at("x", 10, 0), _at("y", 20, 5), _at("a1", 30, 90), _at("a2", 40, 95)]
+    assert topics_from_groups(inputs, [_group("a1", "a2")], 0.80) == []
+
+
+def test_a_lone_story_is_not_a_topic() -> None:
+    inputs = [_at("a1", 10, 0), _at("a2", 20, 10), _at("b1", 30, 90), _at("b2", 40, 100)]
+    assert topics_from_groups(inputs, [_group("a1", "a2"), _group("b1", "b2")], 0.80) == []
+
+
+def test_the_most_central_distinct_title_names_the_topic() -> None:
+    inputs = [
+        _at("a1", 10, 0, "edge"),
+        _at("a2", 20, 20, "middle"),
+        _at("b1", 30, 40, "far edge"),
+        _at("b2", 40, 40, "far edge"),
+    ]
+    topics = topics_from_groups(inputs, [_group("a1", "a2"), _group("b1", "b2")], 0.70)
+    assert topics[0].representative_entry_id == "a2"
+
+
+def _reference_topics(
+    inputs: list[GroupingInput], groups: list[PublishedGroup], threshold: float
+) -> set[tuple[str, ...]]:
+    """Plain average linkage: recompute every pair's mean cosine at each step."""
+    vectors = {item.entry_id: item.embedding / np.linalg.norm(item.embedding) for item in inputs}
+    grouped = {entry_id for group in groups for entry_id in group.members}
+    clusters = [(list(group.members), True) for group in groups]
+    clusters += [([item.entry_id], False) for item in inputs if item.entry_id not in grouped]
+    units = [1] * len(clusters)
+    while True:
+        best, pair = threshold, None
+        for x in range(len(clusters)):
+            for y in range(x + 1, len(clusters)):
+                pairs = [(a, b) for a in clusters[x][0] for b in clusters[y][0]]
+                score = float(np.mean([vectors[a] @ vectors[b] for a, b in pairs]))
+                if score >= best:
+                    best, pair = score, (x, y)
+        if pair is None:
+            break
+        x, y = pair
+        clusters[x] = (clusters[x][0] + clusters[y][0], clusters[x][1] or clusters[y][1])
+        units[x] += units[y]
+        del clusters[y], units[y]
+    return {
+        tuple(sorted(members))
+        for (members, has_group), count in zip(clusters, units, strict=True)
+        if count > 1 and has_group
+    }
+
+
+def test_topics_match_plain_average_linkage() -> None:
+    generator = np.random.default_rng(7)
+    centers = generator.normal(size=(5, 16))
+    inputs = []
+    for index in range(60):
+        vector = centers[index % 5] + generator.normal(scale=0.9, size=16)
+        inputs.append(GroupingInput(f"e{index:02d}", index, f"t{index}", vector.astype(np.float32)))
+    ids = [item.entry_id for item in inputs]
+    groups = [PublishedGroup(f"g{n}", ids[n], (ids[n], ids[n + 5])) for n in range(0, 30, 3)]
+    for threshold in (0.3, 0.5, 0.7):
+        topics = topics_from_groups(inputs, groups, threshold)
+        assert {tuple(sorted(topic.members)) for topic in topics} == _reference_topics(
+            inputs, groups, threshold
+        )
+    assert topics_from_groups(inputs, groups, 0.3)
 
 
 def test_group_phase_publishes_only_after_all_embeddings_exist(populate, monkeypatch) -> None:

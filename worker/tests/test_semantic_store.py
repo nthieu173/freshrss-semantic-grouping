@@ -13,6 +13,7 @@ from freshrss_semantic.semantic_store import (
     Connection,
     IncompleteEmbeddings,
     PublishedGroup,
+    PublishedTopic,
     SchemaVersionError,
     SemanticStore,
     SnapshotChanged,
@@ -79,13 +80,30 @@ def test_group_publication_rolls_back_without_losing_previous_groups(populate) -
     store = populate(entries=2)
     snapshot = store.load_snapshot()
     old = PublishedGroup("old", "first", ("first", "second"))
-    store.publish_groups(snapshot, [old])
+    old_topic = PublishedTopic("old-topic", "first", ("first", "second", "third"))
+    store.publish_groups(snapshot, [old], [old_topic])
     assert raw(store.database, "SELECT similarity FROM group_members") == [(None,), (None,)]
-    invalid = PublishedGroup("new", "first", ("first", "first"))
+    new = PublishedGroup("new", "first", ("first", "second"))
+    invalid = PublishedTopic("new-topic", "first", ("first", "first"))
     with pytest.raises((sqlite3.IntegrityError, psycopg.IntegrityError)):
-        store.publish_groups(snapshot, [invalid])
+        store.publish_groups(snapshot, [new], [invalid])
     assert raw(store.database, "SELECT group_id FROM groups") == [("old",)]
     assert raw(store.database, "SELECT COUNT(*) FROM group_members") == [(2,)]
+    assert raw(store.database, "SELECT topic_id FROM topics") == [("old-topic",)]
+    assert raw(store.database, "SELECT COUNT(*) FROM topic_members") == [(3,)]
+
+
+def test_rebuild_clears_topics_with_groups(populate) -> None:
+    store = populate(entries=2)
+    snapshot = store.load_snapshot()
+    store.publish_groups(
+        snapshot,
+        [PublishedGroup("g", "first", ("first", "second"))],
+        [PublishedTopic("t", "first", ("first", "second", "third"))],
+    )
+    store.rebuild_worker_state()
+    for table in ("groups", "group_members", "topics", "topic_members", "worker_state"):
+        assert raw(store.database, f"SELECT COUNT(*) FROM {table}") == [(0,)]
 
 
 def test_cleanup_removes_only_embeddings_without_any_source_input(populate) -> None:
@@ -152,7 +170,7 @@ def test_postgres_writers_wait_for_each_other(populate, database: str | Path) ->
 def test_invalid_json_does_not_change_existing_groups(populate) -> None:
     store = populate(entries=0)
     snapshot = store.load_snapshot()
-    store.publish_groups(snapshot, [])
+    store.publish_groups(snapshot, [], [])
     raw(
         store.database, "UPDATE pipeline_config SET config_json=?", (json.dumps({"enabled": True}),)
     )
@@ -251,6 +269,7 @@ def test_publication_writes_are_batched(populate) -> None:
                 PublishedGroup("a", "1", ("1", "2", "3")),
                 PublishedGroup("b", "4", ("4", "5")),
             ],
+            [PublishedTopic("t", "1", ("1", "2", "3", "6"))],
         )
         store._session = real
 
@@ -259,7 +278,9 @@ def test_publication_writes_are_batched(populate) -> None:
         ("executemany", "INSERT INTO embeddings( entry_", 2),
         ("executemany", "INSERT INTO groups( group_id, ", 2),
         ("executemany", "INSERT INTO group_members(grou", 5),
-        ("executemany", "INSERT INTO worker_state(key, ", 5),
+        ("executemany", "INSERT INTO topics( topic_id, ", 1),
+        ("executemany", "INSERT INTO topic_members(topi", 4),
+        ("executemany", "INSERT INTO worker_state(key, ", 6),
     ]
     assert raw(store.database, "SELECT group_id, entry_id FROM group_members ORDER BY 1, 2") == [
         ("a", "1"),
@@ -269,6 +290,7 @@ def test_publication_writes_are_batched(populate) -> None:
         ("b", "5"),
     ]
     assert store.state_dict()["current_group_count"] == "2"
+    assert store.state_dict()["current_topic_count"] == "1"
 
 
 def test_session_reuses_one_validated_connection(populate, monkeypatch) -> None:

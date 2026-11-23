@@ -107,10 +107,23 @@ first. Titles only name the group; they never decide membership. Publication
 stores only group identity, representative identity, and membership; it does not
 store member cosine similarities.
 
-All groups are computed before a write transaction starts. Publication rechecks
-the generation and revision, atomically replaces group and membership tables
-(one batched insert for the groups and one for all memberships), and records
-the last published generation and successful run.
+Topics follow from the groups. Each group and each article in no group is a
+unit, ordered by its earliest article. The mean cosine similarity between the
+articles of two units is the dot product of their mean unit vectors, so one
+float32 unit-by-unit matrix holds every pair. Average linkage merges the most
+similar pair while it is at least `topic_threshold`, updating the merged row by
+the Lance-Williams rule weighted by article count; each row caches its best
+partner, so only rows that pointed at a merged unit are rescanned. Ties go to
+the earliest units. A cluster of two or more units including a group becomes a
+topic of all their articles, keyed by a versioned SHA-256 of its earliest
+article and named like a group. At 3400 units of 512 dimensions this takes
+about 0.15 seconds and 70 MiB, nearly all of it the matrix.
+
+All groups and topics are computed, and the SemHash index released, before a
+write transaction starts. Publication rechecks the generation and revision,
+atomically replaces group, topic and membership tables (one batched insert per
+table), and records the last published generation, group and topic counts, and
+successful run.
 
 ## Cleanup and rebuild
 
@@ -118,8 +131,8 @@ Cleanup removes embeddings whose exact `(entry_id, source_hash)` input no longer
 exists. Producer-side pruning separately retains inputs needed by the active and
 last published generations. Cleanup can run less frequently than grouping.
 
-`rebuild` deletes only worker-owned embeddings, groups, memberships, and state
-while holding the worker lock. It does not touch candidate generations,
+`rebuild` deletes only worker-owned embeddings, groups, topics, memberships, and
+state while holding the worker lock. It does not touch candidate generations,
 extension state, schema, or the database file.
 
 ## Process and container boundaries
