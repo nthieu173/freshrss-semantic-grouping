@@ -10,6 +10,7 @@ fingerprint into `pipeline_config`; the worker does not read FreshRSS files.
 | Candidate source | All entries | Includes every entry in the rolling window. A native FreshRSS saved query can be selected instead. |
 | Embedding model | `minishlab/potion-base-32M` | Chosen from the models bundled in the worker image (`minishlab/potion-base-8M` is the other). Changes invalidate embeddings and groups. |
 | Similarity threshold | `0.60` | Changes groups without invalidating vectors. |
+| Topic threshold | `0.50` | How alike stories and loose articles must be, on average, to share a topic in the Stories view. Must be below the similarity threshold; a configuration saved before topics gets `0.50`, or `0.10` below a lower similarity threshold. Changes topics without invalidating vectors. |
 | Rolling window | 72 hours | An outer received-date constraint independent of the saved query. |
 | Refresh interval | 30 minutes | Candidate reconciliation interval in 10-minute increments; config/query changes bypass it. |
 | Title/content input | title and content | Selected fields become canonical embedding text. The default threshold suits title and content; titles alone group best nearer `0.45`. |

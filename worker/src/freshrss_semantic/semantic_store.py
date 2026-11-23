@@ -26,7 +26,7 @@ from psycopg.conninfo import conninfo_to_dict, make_conninfo
 
 from .config import ConfigurationError, ConfigurationMissing, PipelineSnapshot, WorkerConfig
 
-DATABASE_SCHEMA_VERSION = 3
+DATABASE_SCHEMA_VERSION = 4
 # The extension accepts either scheme in any letter case; libpq itself only
 # recognises the lowercase prefixes, so URLs are normalised before connecting.
 _POSTGRES_SCHEME = re.compile(r"^postgres(?:ql)?://", re.IGNORECASE)
@@ -43,6 +43,8 @@ REQUIRED_TABLES = frozenset(
         "embeddings",
         "groups",
         "group_members",
+        "topics",
+        "topic_members",
         "worker_state",
         "export_state",
         "managed_labels",
@@ -658,6 +660,8 @@ class SemanticStore:
     def rebuild_worker_state(self) -> None:
         """Delete worker-owned data only; producer generations remain intact."""
         with self.connection() as db, self.transaction(db):
+            db.execute("DELETE FROM topic_members")
+            db.execute("DELETE FROM topics")
             db.execute("DELETE FROM group_members")
             db.execute("DELETE FROM groups")
             db.execute("DELETE FROM embeddings")

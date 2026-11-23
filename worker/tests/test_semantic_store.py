@@ -126,7 +126,7 @@ def test_worker_waits_for_an_extension_created_postgres_schema(empty_postgres: s
     with pytest.raises(SchemaVersionError, match="does not exist"):
         store.connect()
     raw(empty_postgres, "CREATE TABLE schema_version (singleton INTEGER, version INTEGER)")
-    raw(empty_postgres, "INSERT INTO schema_version VALUES (1, 3)")
+    raw(empty_postgres, "INSERT INTO schema_version VALUES (1, 4)")
     assert store.exists()
     with pytest.raises(SchemaVersionError, match="missing required tables"):
         store.connect()

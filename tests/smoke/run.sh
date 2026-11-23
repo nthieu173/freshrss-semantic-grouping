@@ -18,7 +18,7 @@ trap cleanup EXIT INT TERM
 
 chmod 0777 "$smoke_dir"
 SMOKE_DATABASE="$smoke_dir/semantic.sqlite" \
-	SMOKE_SCHEMA="$repository_dir/fixtures/semantic-schema-v3.sql" \
+	SMOKE_SCHEMA="$repository_dir/fixtures/semantic-schema-v4.sql" \
 	python3 - <<'PY'
 import json
 import os
@@ -71,7 +71,7 @@ members = [
 ]
 database.executemany("INSERT INTO candidate_members VALUES (?, ?, ?, ?)", members)
 database.execute(
-    "INSERT INTO pipeline_config VALUES (1, 3, ?, ?, ?, ?, ?)",
+    "INSERT INTO pipeline_config VALUES (1, 4, ?, ?, ?, ?, ?)",
     ("smoke", 1, now + 5400, json.dumps(config), now),
 )
 database.commit()

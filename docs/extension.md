@@ -140,6 +140,6 @@ cannot affect ordinary FreshRSS maintenance.
 The configuration page reports the selected source and definition fingerprint,
 export attempt/success, active generation and candidate count, worker
 attempt/success, label-sync attempt/success, pending work,
-model/window/threshold, and the latest bounded error summary. It never exposes
+model/window/thresholds, and the latest bounded error summary. It never exposes
 traces or host paths. Article ordering and presentation are entirely native
 FreshRSS behavior under **My labels**.

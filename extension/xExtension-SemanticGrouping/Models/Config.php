@@ -5,7 +5,8 @@ final class SemanticGrouping_Config {
 	public const SCHEMA_VERSION = 3;
 	public const NORMALIZATION_VERSION = 1;
 	public const MINIMUM_GROUP_SIZE = 2;
-	public const GROUPING_FORMAT_VERSION = 2;
+	public const GROUPING_FORMAT_VERSION = 3;
+	public const DEFAULT_TOPIC_THRESHOLD = 0.50;
 	/**
 	 * Model2Vec embeds only a text's first 512 tokens, roughly 2000 characters,
 	 * so longer content would cost worker memory without changing a vector.
@@ -33,6 +34,7 @@ final class SemanticGrouping_Config {
 			],
 			'embedding_model' => 'minishlab/potion-base-32M',
 			'similarity_threshold' => 0.60,
+			'topic_threshold' => self::DEFAULT_TOPIC_THRESHOLD,
 			'window_hours' => 72,
 			'candidate_export_interval_minutes' => 30,
 			'include_title' => true,
@@ -72,15 +74,32 @@ final class SemanticGrouping_Config {
 		if (is_int($contentLimit) && $contentLimit > self::MAX_CONTENT_CHARACTERS) {
 			$config['content_character_limit'] = self::MAX_CONTENT_CHARACTERS;
 		}
+		if (!array_key_exists('topic_threshold', $stored)) {
+			$config['topic_threshold'] = self::defaultTopicThreshold($config['similarity_threshold']);
+		}
 		$source = is_array($stored['candidate_source'] ?? null) ? $stored['candidate_source'] : [];
 		$config['candidate_source'] = array_replace(self::defaults()['candidate_source'], $source);
 		return $config;
+	}
+
+	/**
+	 * The topic threshold for a configuration saved before topics existed:
+	 * the default, or 0.10 below a lower similarity threshold so topics stay
+	 * broader than stories. The worker applies the same rule.
+	 * @param mixed $similarityThreshold
+	 */
+	public static function defaultTopicThreshold($similarityThreshold): float {
+		if ((!is_float($similarityThreshold) && !is_int($similarityThreshold)) || !is_finite((float)$similarityThreshold)) {
+			return self::DEFAULT_TOPIC_THRESHOLD;
+		}
+		return round(max(0.0, min(self::DEFAULT_TOPIC_THRESHOLD, (float)$similarityThreshold - 0.10)), 2);
 	}
 
 	/** @return array<string,mixed> */
 	public static function fromRequest(): array {
 		$sourceValue = Minz_Request::paramString('candidate_source', plaintext: true);
 		$thresholdValue = trim(Minz_Request::paramString('similarity_threshold', plaintext: true));
+		$topicThresholdValue = trim(Minz_Request::paramString('topic_threshold', plaintext: true));
 		$source = $sourceValue === 'all_entries'
 			? ['mode' => 'all_entries', 'query_id' => null, 'query_name' => 'All entries']
 			: ['mode' => 'saved_query', 'query_id' => ctype_digit($sourceValue) ? (int)$sourceValue : null, 'query_name' => ''];
@@ -90,6 +109,7 @@ final class SemanticGrouping_Config {
 			'candidate_source' => $source,
 			'embedding_model' => trim(Minz_Request::paramString('embedding_model', plaintext: true)),
 			'similarity_threshold' => is_numeric($thresholdValue) ? (float)$thresholdValue : NAN,
+			'topic_threshold' => is_numeric($topicThresholdValue) ? (float)$topicThresholdValue : NAN,
 			'window_hours' => Minz_Request::paramInt('window_hours'),
 			'candidate_export_interval_minutes' => Minz_Request::paramInt('candidate_export_interval_minutes'),
 			'include_title' => Minz_Request::paramBoolean('include_title'),
@@ -115,6 +135,12 @@ final class SemanticGrouping_Config {
 		$threshold = $config['similarity_threshold'] ?? null;
 		if ((!is_float($threshold) && !is_int($threshold)) || !is_finite((float)$threshold) || (float)$threshold < 0.0 || (float)$threshold > 1.0) {
 			$errors[] = 'Similarity threshold must be between 0 and 1.';
+		}
+		$topicThreshold = $config['topic_threshold'] ?? null;
+		if ((!is_float($topicThreshold) && !is_int($topicThreshold)) || !is_finite((float)$topicThreshold) || (float)$topicThreshold < 0.0 || (float)$topicThreshold > 1.0) {
+			$errors[] = 'Topic threshold must be between 0 and 1.';
+		} elseif ((is_float($threshold) || is_int($threshold)) && (float)$topicThreshold >= (float)$threshold) {
+			$errors[] = 'Topic threshold must be below the similarity threshold.';
 		}
 		self::validateInt($config, 'window_hours', 1, 8760, $errors);
 		$refreshInterval = $config['candidate_export_interval_minutes'] ?? null;
@@ -200,6 +226,9 @@ final class SemanticGrouping_Config {
 			'minimum_group_size' => self::MINIMUM_GROUP_SIZE,
 			'query_fingerprint' => (string)$config['query_fingerprint'],
 			'similarity_threshold' => (float)$config['similarity_threshold'],
+			// A configuration published before topics has none; the worker
+			// applies the same default.
+			'topic_threshold' => (float)($config['topic_threshold'] ?? self::defaultTopicThreshold($config['similarity_threshold'])),
 			'window_hours' => (int)$config['window_hours'],
 		]);
 	}

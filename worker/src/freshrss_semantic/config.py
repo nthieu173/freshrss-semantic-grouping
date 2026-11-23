@@ -17,7 +17,9 @@ class ConfigurationMissing(ConfigurationError):
 
 
 MINIMUM_GROUP_SIZE = 2
-GROUPING_FORMAT_VERSION = 2
+GROUPING_FORMAT_VERSION = 3
+# Used when a configuration published before topics has no topic threshold.
+DEFAULT_TOPIC_THRESHOLD = 0.50
 # Match the extension's limits: Model2Vec embeds about the first 2000
 # characters, and 500 such texts fit the worker's 512 MiB limit.
 MAX_CONTENT_CHARACTERS = 2000
@@ -58,6 +60,15 @@ def _float(data: dict[str, Any], key: str, low: float, high: float) -> float:
     return result
 
 
+def default_topic_threshold(similarity_threshold: float) -> float:
+    """Return the extension's topic threshold for a configuration without one.
+
+    The default, or 0.10 below a lower similarity threshold, so topics stay
+    broader than stories.
+    """
+    return round(max(0.0, min(DEFAULT_TOPIC_THRESHOLD, similarity_threshold - 0.10)), 2)
+
+
 @dataclass(frozen=True)
 class WorkerConfig:
     """Validated effective configuration copied into ``pipeline_config``."""
@@ -65,6 +76,7 @@ class WorkerConfig:
     enabled: bool
     embedding_model: str
     similarity_threshold: float
+    topic_threshold: float
     window_hours: int
     include_title: bool
     include_content: bool
@@ -89,13 +101,22 @@ class WorkerConfig:
         query_fingerprint = data.get("query_fingerprint", "")
         if not isinstance(query_fingerprint, str) or not query_fingerprint:
             raise ConfigurationError("query_fingerprint is missing")
+        similarity_threshold = _float(data, "similarity_threshold", 0.0, 1.0)
+        topic_threshold = (
+            _float(data, "topic_threshold", 0.0, 1.0)
+            if "topic_threshold" in data
+            else default_topic_threshold(similarity_threshold)
+        )
+        if topic_threshold >= similarity_threshold:
+            raise ConfigurationError("topic_threshold must be below similarity_threshold")
         rebuild_token = data.get("force_rebuild_token", "")
         if not isinstance(rebuild_token, str) or len(rebuild_token) > 128:
             raise ConfigurationError("force_rebuild_token must be a short string")
         return cls(
             enabled=_bool(data, "enabled"),
             embedding_model=model.strip(),
-            similarity_threshold=_float(data, "similarity_threshold", 0.0, 1.0),
+            similarity_threshold=similarity_threshold,
+            topic_threshold=topic_threshold,
             window_hours=_int(data, "window_hours", 1, 24 * 365),
             include_title=include_title,
             include_content=include_content,
@@ -125,7 +146,7 @@ class WorkerConfig:
 
     @property
     def grouping_fingerprint(self) -> str:
-        """Fingerprint all settings that change group membership."""
+        """Fingerprint all settings that change group or topic membership."""
         return fingerprint(
             {
                 "embedding_fingerprint": self.embedding_fingerprint,
@@ -133,6 +154,7 @@ class WorkerConfig:
                 "minimum_group_size": MINIMUM_GROUP_SIZE,
                 "query_fingerprint": self.query_fingerprint,
                 "similarity_threshold": self.similarity_threshold,
+                "topic_threshold": self.topic_threshold,
                 "window_hours": self.window_hours,
             }
         )

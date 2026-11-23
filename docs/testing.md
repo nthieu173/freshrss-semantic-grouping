@@ -32,7 +32,7 @@ must already exist.
 
 ## Worker image smoke test
 
-`make test/smoke` runs an already-built worker image against a temporary schema-v3
+`make test/smoke` runs an already-built worker image against a temporary schema-v4
 database with networking disabled, a read-only root, a 32 MiB `/tmp`, and a
 512 MiB memory limit. It defaults to the CI image and platform; local runs can
 override them together with the container runtime:

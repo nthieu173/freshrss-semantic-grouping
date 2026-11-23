@@ -221,6 +221,7 @@ function configureWhileDisabled(): void {
 		'enabled' => '1',
 		'embedding_model' => 'minishlab/potion-base-8M',
 		'similarity_threshold' => '0.75',
+		'topic_threshold' => '0.65',
 		'window_hours' => '48',
 		'candidate_export_interval_minutes' => '20',
 		'include_title' => '1',

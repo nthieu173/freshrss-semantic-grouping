@@ -11,13 +11,13 @@ require_once __DIR__ . '/SemanticLock.php';
 final class SemanticGrouping_SemanticDatabase {
 	public const PATH = '/semantic-data/semantic.sqlite';
 	public const URL_ENVIRONMENT = 'SEMANTIC_DATABASE_URL';
-	public const SCHEMA_VERSION = 3;
+	public const SCHEMA_VERSION = 4;
 	public const WORKER_LOCK = 'semantic-worker';
 	/** Serializes PostgreSQL writers the way SQLite's BEGIN IMMEDIATE does. */
 	private const WRITE_LOCK = 'semantic-write';
 	/** Every table this release owns, in a safe drop order. */
 	private const TABLES = [
-		'group_members', 'groups', 'embeddings', 'worker_state',
+		'topic_members', 'topics', 'group_members', 'groups', 'embeddings', 'worker_state',
 		'candidate_members', 'article_inputs', 'candidate_generations',
 		'pipeline_config', 'export_state', 'managed_labels', 'label_sync_state',
 		'schema_version',
@@ -227,7 +227,7 @@ final class SemanticGrouping_SemanticDatabase {
 			if ($current === self::SCHEMA_VERSION) {
 				return false;
 			}
-			if (!in_array($current, [0, 1, 2], true)) {
+			if (!in_array($current, [0, 1, 2, 3], true)) {
 				throw new RuntimeException('No migration path exists for this semantic database.');
 			}
 			$statements = $current === 0 ? self::schemaStatements() : [];
@@ -236,6 +236,9 @@ final class SemanticGrouping_SemanticDatabase {
 			}
 			if ($current === 1 || $current === 2) {
 				$statements[] = "ALTER TABLE candidate_members ADD COLUMN normalized_title TEXT NOT NULL DEFAULT ''";
+			}
+			if ($current > 0) {
+				$statements = array_merge($statements, self::topicSchemaStatements(false));
 			}
 			foreach ($statements as $sql) {
 				$db->exec($sql);
@@ -252,7 +255,7 @@ final class SemanticGrouping_SemanticDatabase {
 		}
 	}
 
-	/** PostgreSQL databases start at the current schema; there are no older ones to upgrade. */
+	/** PostgreSQL databases start at schema 3 or later; 3 is the oldest to upgrade. */
 	private function migratePostgres(PDO $pdo): void {
 		$pdo->beginTransaction();
 		try {
@@ -262,7 +265,14 @@ final class SemanticGrouping_SemanticDatabase {
 			if ($current > self::SCHEMA_VERSION) {
 				throw new RuntimeException('Semantic database belongs to a newer release.');
 			}
-			if ($current !== self::SCHEMA_VERSION) {
+			if ($current === 3) {
+				foreach (self::topicSchemaStatements(true) as $sql) {
+					$pdo->exec($sql);
+				}
+				$pdo->exec('UPDATE schema_version SET version = ' . self::SCHEMA_VERSION . ' WHERE singleton = 1');
+				$pdo->exec('UPDATE pipeline_config SET database_schema_version = ' . self::SCHEMA_VERSION . ', producer_lease_until = 0');
+				$pdo->exec("DELETE FROM export_state WHERE key = 'last_export_success'");
+			} elseif ($current !== self::SCHEMA_VERSION) {
 				if ($current !== 0 || self::postgresTablesExist($pdo)) {
 					throw new RuntimeException('No migration path exists for this semantic database.');
 				}
@@ -287,7 +297,7 @@ final class SemanticGrouping_SemanticDatabase {
 	}
 
 	/**
-	 * The schema in fixtures/semantic-schema-v3.postgres.sql: the SQLite
+	 * The schema in fixtures/semantic-schema-v4.postgres.sql: the SQLite
 	 * contract with BIGINT integers, BYTEA embeddings and a version row.
 	 * @return list<string>
 	 */
@@ -365,6 +375,7 @@ final class SemanticGrouping_SemanticDatabase {
 				updated_at BIGINT NOT NULL
 			)',
 			'CREATE TABLE label_sync_state (key TEXT PRIMARY KEY, value TEXT NOT NULL)',
+			...self::topicSchemaStatements(true),
 			'INSERT INTO schema_version (singleton, version) VALUES (1, ' . self::SCHEMA_VERSION . ')',
 		];
 	}
@@ -432,7 +443,32 @@ final class SemanticGrouping_SemanticDatabase {
 			) WITHOUT ROWID',
 			'CREATE TABLE worker_state (key TEXT PRIMARY KEY, value TEXT NOT NULL) WITHOUT ROWID',
 			'CREATE TABLE export_state (key TEXT PRIMARY KEY, value TEXT NOT NULL) WITHOUT ROWID',
-		], self::labelSchemaStatements());
+		], self::labelSchemaStatements(), self::topicSchemaStatements(false));
+	}
+
+	/**
+	 * Schema 4: topics, worker-owned like groups. A topic's members are
+	 * articles, both those in its stories (groups) and related articles in
+	 * no group.
+	 * @return list<string>
+	 */
+	private static function topicSchemaStatements(bool $postgres): array {
+		$integer = $postgres ? 'BIGINT' : 'INTEGER';
+		return [
+			"CREATE TABLE topics (
+				topic_id TEXT PRIMARY KEY,
+				representative_entry_id TEXT NOT NULL,
+				selection_generation {$integer} NOT NULL,
+				grouping_fingerprint TEXT NOT NULL,
+				generated_at {$integer} NOT NULL
+			)",
+			'CREATE TABLE topic_members (
+				topic_id TEXT NOT NULL,
+				entry_id TEXT NOT NULL UNIQUE,
+				PRIMARY KEY (topic_id, entry_id),
+				FOREIGN KEY (topic_id) REFERENCES topics(topic_id) ON DELETE CASCADE
+			)' . ($postgres ? '' : ' WITHOUT ROWID'),
+		];
 	}
 
 	/** @return list<string> */

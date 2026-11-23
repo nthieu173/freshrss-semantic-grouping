@@ -140,7 +140,8 @@ An embedding is current only when both its source hash and embedding fingerprint
 match. The embedding fingerprint covers the model, selected fields, content
 limit, normalization/input format versions, and explicit rebuild token. The
 grouping fingerprint additionally covers the query fingerprint, rolling window,
-threshold, grouping format, and the fixed minimum group size of two.
+similarity and topic thresholds, grouping format, and the fixed minimum group
+size of two.
 
 This split avoids recomputing vectors for grouping-only changes while ensuring
 that every text or model change invalidates the appropriate cache. Old vectors

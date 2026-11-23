@@ -65,6 +65,14 @@ $formatTime = static function (mixed $value): string {
 	</div>
 
 	<div class="form-group">
+		<label class="group-name" for="topic-threshold">Topic threshold</label>
+		<div class="group-controls">
+			<input id="topic-threshold" type="number" min="0" max="1" step="0.01" name="topic_threshold" value="<?= $escaped($config['topic_threshold']) ?>" required="required" />
+			<p class="help">How alike stories and articles must be, on average, to share a topic in the Stories view. Below the similarity threshold.</p>
+		</div>
+	</div>
+
+	<div class="form-group">
 		<label class="group-name" for="window-hours">Rolling window (hours)</label>
 		<div class="group-controls"><input id="window-hours" type="number" min="1" max="8760" name="window_hours" value="<?= (int)$config['window_hours'] ?>" required="required" /></div>
 	</div>
@@ -141,7 +149,7 @@ $formatTime = static function (mixed $value): string {
 		<dt>Embeddings</dt><dd><?= (int)$status['current_embeddings'] ?> current, <?= (int)$status['pending_embeddings'] ?> pending</dd>
 		<dt>Last label synchronization attempt / success</dt><dd><?= $formatTime($labelSync['last_attempt'] ?? 0) ?> / <?= $formatTime($labelSync['last_success'] ?? 0) ?></dd>
 		<dt>Model</dt><dd><?= $escaped($effective['embedding_model'] ?? '') ?></dd>
-		<dt>Window / threshold</dt><dd><?= (int)($effective['window_hours'] ?? 0) ?> hours / <?= $escaped($effective['similarity_threshold'] ?? '') ?></dd>
+		<dt>Window / thresholds</dt><dd><?= (int)($effective['window_hours'] ?? 0) ?> hours / <?= $escaped($effective['similarity_threshold'] ?? '') ?> stories, <?= $escaped($effective['topic_threshold'] ?? '') ?> topics</dd>
 		<dt>Pending work</dt><dd><?= !empty($status['export_pending']) ? 'export ' : '' ?><?= (int)$status['pending_embeddings'] > 0 ? 'embedding ' : '' ?><?= !empty($status['grouping_pending']) ? 'regrouping ' : '' ?><?= !empty($status['label_sync_pending']) ? 'label synchronization' : '' ?><?= empty($status['export_pending']) && (int)$status['pending_embeddings'] === 0 && empty($status['grouping_pending']) && empty($status['label_sync_pending']) ? 'None' : '' ?></dd>
 		<dt>Latest error</dt><dd><?= $escaped($latestError) ?: 'None' ?></dd>
 	</dl>

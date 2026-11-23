@@ -39,7 +39,7 @@ error (exit status 2), never a SQLite path. A blank or whitespace-only value
 counts as unset. A `--database` value that looks like a URL with another scheme
 is refused the same way. Child phases receive the URL through the environment,
 never their command line. The worker
-validates database schema 3 and the published configuration, then snapshots the
+validates database schema 4 and the published configuration, then snapshots the
 active generation and configuration revision. It rechecks both inside each
 write transaction that could affect a visible result.
 

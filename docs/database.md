@@ -7,7 +7,7 @@ PostgreSQL instead (see [PostgreSQL](#postgresql)). Any value that is not blank
 after trimming whitespace selects PostgreSQL; its scheme must be `postgresql`
 or `postgres` (in any letter case), and any other scheme is an error rather than
 a fallback to SQLite. No browser parameter can change either. The extension
-creates and migrates the database; the worker validates schema version 3 and
+creates and migrates the database; the worker validates schema version 4 and
 refuses to migrate, rename, delete, or replace an unknown database.
 
 All connections enable foreign keys, use rollback journaling, wait at most five
@@ -19,17 +19,19 @@ index construction happen outside write transactions.
 | Owner | Tables |
 |---|---|
 | Extension | `pipeline_config`, `candidate_generations`, `article_inputs`, `candidate_members`, `export_state`, `managed_labels`, `label_sync_state` |
-| Worker | `embeddings`, `groups`, `group_members`, `worker_state` |
+| Worker | `embeddings`, `groups`, `group_members`, `topics`, `topic_members`, `worker_state` |
 
 Foreign keys exist only within a single writer's table set. Cross-owner
 references are validated during loading and cleanup rather than by cascades.
-The complete DDL is checked in at `fixtures/semantic-schema-v3.sql`. The v1 and
-v2 fixtures are retained to verify additive migrations. The nullable
+The complete DDL is checked in at `fixtures/semantic-schema-v4.sql`. The v1 to
+v3 fixtures are retained to verify additive migrations. The nullable
 `group_members.similarity` column remains for additive compatibility but new
 workers leave it null. Schema v3 adds the normalized title to each generation's
-membership row; migrating expires the producer lease and clears the last-export
-timestamp so the worker waits for the next maintenance pass to republish
-candidate titles immediately.
+membership row. Schema v4 adds `topics` and `topic_members`: a topic gathers
+related groups and articles in no group, and its members are articles, so a
+topic's stories are the groups its members belong to. Every migration expires
+the producer lease and clears the last-export timestamp so the worker waits for
+the next maintenance pass to republish candidates immediately.
 
 ## Generation publication
 
@@ -41,9 +43,9 @@ changes the active generation.
 
 The worker snapshots `(active_generation, config_revision)`. Embedding batch
 commits and group publication recheck both values inside their write
-transaction. Group results are fully computed before one transaction replaces
-`groups` and `group_members`, so an exception or out-of-memory termination
-leaves the last publication intact.
+transaction. Group and topic results are fully computed before one transaction
+replaces `groups`, `group_members`, `topics` and `topic_members`, so an
+exception or out-of-memory termination leaves the last publication intact.
 
 Embeddings are contiguous little-endian float32 BLOBs. Readers reject a BLOB
 whose byte length is not `dimensions * 4`, non-finite vectors, and mixed
@@ -65,10 +67,10 @@ while `cli/migrate.php` runs is safe: the second migrator waits and then finds
 the schema current.
 
 Worker `rebuild` takes the worker advisory lock and deletes only embeddings,
-groups, group members, and worker state. The extension's administrator-only full
-reset takes that same lock, transactionally recreates the schema in the existing
-database file, and republishes the candidate generation. Neither action renames
-or replaces the live SQLite file.
+groups, topics, their members, and worker state. The extension's administrator-
+only full reset takes that same lock, transactionally recreates the schema in
+the existing database file, and republishes the candidate generation. Neither
+action renames or replaces the live SQLite file.
 
 ## PostgreSQL
 
@@ -80,11 +82,13 @@ part, `PGPASSWORD`, or a `PGPASSFILE`. Query parameters such as `sslmode` or
 the connection's current schema. Both components must use the same database,
 schema and role (or roles with full rights on the tables the extension creates).
 
-The schema is the v3 contract with PostgreSQL types: integers are `BIGINT`,
+The schema is the v4 contract with PostgreSQL types: integers are `BIGINT`,
 embeddings are `BYTEA`, and a one-row `schema_version` table stands in for
 SQLite's `PRAGMA user_version`. The complete DDL is
-`fixtures/semantic-schema-v3.postgres.sql`. A PostgreSQL database is always
-created at the current version; the v1 and v2 migrations apply only to SQLite.
+`fixtures/semantic-schema-v4.postgres.sql`. A PostgreSQL database is created at
+the current version. The oldest PostgreSQL schema is v3
+(`fixtures/semantic-schema-v3.postgres.sql`), which upgrades to v4 in place;
+the v1 and v2 migrations apply only to SQLite.
 The extension refuses to create its tables in a schema that already holds
 unversioned tables of the same names.
 

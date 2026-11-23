@@ -26,6 +26,7 @@ def worker_config(**overrides: object) -> dict[str, object]:
         "enabled": True,
         "embedding_model": "test/model",
         "similarity_threshold": 0.9,
+        "topic_threshold": 0.5,
         "window_hours": 72,
         "candidate_export_interval_minutes": 30,
         "include_title": True,
@@ -89,12 +90,12 @@ def database(request: pytest.FixtureRequest, tmp_path: Path) -> str | Path:
     """The v3 fixture schema in either backend."""
     if request.param == "postgres":
         url: str = request.getfixturevalue("empty_postgres")
-        raw(url, (FIXTURES / "semantic-schema-v3.postgres.sql").read_text())
+        raw(url, (FIXTURES / "semantic-schema-v4.postgres.sql").read_text())
         return url
     path = tmp_path / "semantic.sqlite"
     connection = open_connection(path)
     try:
-        connection.raw.executescript((FIXTURES / "semantic-schema-v3.sql").read_text())  # type: ignore[attr-defined]
+        connection.raw.executescript((FIXTURES / "semantic-schema-v4.sql").read_text())  # type: ignore[attr-defined]
     finally:
         connection.close()
     return path
@@ -125,7 +126,7 @@ def populate(database: str | Path) -> Callable[..., SemanticStore]:
             )
         raw(
             database,
-            "INSERT INTO pipeline_config VALUES (1, 3, 'revision-v1', 1, ?, ?, ?)",
+            "INSERT INTO pipeline_config VALUES (1, 4, 'revision-v1', 1, ?, ?, ?)",
             (now + 7200, json.dumps(raw_config, sort_keys=True), now),
         )
         # Exercise config validation here so fixture failures remain obvious.
