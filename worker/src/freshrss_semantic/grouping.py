@@ -55,7 +55,6 @@ def groups_from_result(
 ) -> list[PublishedGroup]:
     """Turn SemHash duplicate edges into deterministic connected groups."""
     order = {item.entry_id: (item.received_at, item.entry_id) for item in inputs}
-    titles = {item.entry_id: item.normalized_title for item in inputs}
     embeddings = {item.entry_id: item.embedding for item in inputs}
     parent = {item.entry_id: item.entry_id for item in inputs}
 
@@ -90,19 +89,9 @@ def groups_from_result(
 
     groups: list[PublishedGroup] = []
     for members in components.values():
-        members.sort(key=order.__getitem__)
-        distinct_members: list[str] = []
-        seen_titles: set[str] = set()
-        for entry_id in members:
-            title = titles[entry_id]
-            if title and title in seen_titles:
-                continue
-            distinct_members.append(entry_id)
-            if title:
-                seen_titles.add(title)
-        if len(distinct_members) < MINIMUM_GROUP_SIZE:
+        if len(members) < MINIMUM_GROUP_SIZE:
             continue
-        members = distinct_members
+        members.sort(key=order.__getitem__)
         # The earliest member keys the group, so its label survives as members
         # arrive; the most central member only names it.
         group_id = hashlib.sha256(("group-v1\0" + members[0]).encode()).hexdigest()[:32]

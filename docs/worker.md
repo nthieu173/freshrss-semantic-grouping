@@ -92,11 +92,11 @@ The worker passes a float32 matrix and minimal ID records to
 if SemHash unexpectedly attempts text encoding, guaranteeing that the Model2Vec
 model is not resident during grouping.
 
-SemHash duplicate edges are combined with union-find into connected components.
-After ordering members by `(received_at, entry_id)`, the worker excludes each
-later member whose non-blank normalized title already occurs in that potential
-group. Components smaller than two articles after this check are dropped. The
-earliest remaining member's versioned SHA-256-derived ID names the group, so a
+SemHash duplicate edges are combined with union-find into connected components,
+and members are ordered by `(received_at, entry_id)`. Titles are not compared,
+so a syndicated copy with the same title joins its group as another source.
+Components smaller than two articles are dropped. The earliest member's
+versioned SHA-256-derived ID names the group, so a
 group keeps its identity and label as later articles join. The representative,
 whose title becomes the label name, is the member most similar to the others:
 the highest sum of cosine similarities to every member's unit-length embedding.

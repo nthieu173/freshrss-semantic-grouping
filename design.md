@@ -191,11 +191,12 @@ same writer; cross-owner references are checked in application logic and tests.
 
 ## Identity and presentation
 
-SemHash duplicate relationships are converted to connected components. Members
-are ordered by `(received_at, entry_id)`, then later members whose non-blank
-normalized title is already present in the component are excluded. Only the
-resulting components with at least two articles are published. The group ID is
-a versioned SHA-256-derived value based on the earliest remaining member. The
+SemHash duplicate relationships are converted to connected components, and
+members are ordered by `(received_at, entry_id)`. Titles play no part: an
+article with the same title as another member, such as a syndicated copy, stays
+in the component as another source. Only components with at least two articles
+are published. The group ID is a versioned SHA-256-derived value based on the
+earliest member. The
 representative, whose title names the label, is the member most similar to the
 rest of the group, with ties going to the earliest. Per-member similarity is not
 published.

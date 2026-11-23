@@ -72,7 +72,9 @@ def test_singleton_components_are_not_published_as_groups() -> None:
     assert groups == []
 
 
-def test_later_members_with_a_title_already_in_the_group_are_excluded() -> None:
+def test_articles_with_the_same_title_stay_in_their_group() -> None:
+    # Grouping ignores titles: a syndicated copy is another source for its
+    # story, not a reason to leave the story.
     inputs = [
         GroupingInput("duplicate", 20, "same title", np.array([0.9, 0.1], dtype=np.float32)),
         GroupingInput("original", 10, "same title", np.array([1.0, 0.0], dtype=np.float32)),
@@ -90,18 +92,19 @@ def test_later_members_with_a_title_already_in_the_group_are_excluded() -> None:
     groups = groups_from_result(result, inputs)
 
     assert len(groups) == 1
-    assert groups[0].representative_entry_id == "original"
-    assert list(groups[0].members) == ["original", "distinct"]
+    assert list(groups[0].members) == ["original", "duplicate", "distinct"]
 
 
-def test_title_deduplication_can_reduce_a_potential_group_to_a_singleton() -> None:
+def test_two_copies_of_one_article_form_a_group() -> None:
     inputs = [
         GroupingInput("original", 10, "same title", np.array([1.0, 0.0], dtype=np.float32)),
         GroupingInput("duplicate", 20, "same title", np.array([0.9, 0.1], dtype=np.float32)),
     ]
     result = Result([Duplicate({"entry_id": "duplicate"}, [({"entry_id": "original"}, 0.99)])])
 
-    assert groups_from_result(result, inputs) == []
+    groups = groups_from_result(result, inputs)
+
+    assert [list(group.members) for group in groups] == [["original", "duplicate"]]
 
 
 def test_group_phase_publishes_only_after_all_embeddings_exist(populate, monkeypatch) -> None:
