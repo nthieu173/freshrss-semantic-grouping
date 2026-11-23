@@ -32,7 +32,7 @@ final class SemanticGrouping_Config {
 				'query_name' => 'All entries',
 			],
 			'embedding_model' => 'minishlab/potion-base-32M',
-			'similarity_threshold' => 0.90,
+			'similarity_threshold' => 0.60,
 			'window_hours' => 72,
 			'candidate_export_interval_minutes' => 30,
 			'include_title' => true,
