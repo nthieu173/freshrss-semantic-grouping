@@ -51,7 +51,7 @@ RUN --mount=type=cache,target=/tmp/.cache/uv \
 	&& useradd --uid 10001 --gid 33 --home-dir /nonexistent --no-create-home --shell /usr/sbin/nologin semantic-worker
 
 # Release metadata last, so it never invalidates a layer above.
-ARG VERSION=0.16.0
+ARG VERSION=0.17.0
 ARG REVISION=unknown
 ARG SOURCE=https://github.com/example/freshrss-semantic-grouping
 LABEL org.opencontainers.image.title="FreshRSS semantic grouping worker" \
