@@ -197,9 +197,12 @@ article with the same title as another member, such as a syndicated copy, stays
 in the component as another source. Only components with at least two articles
 are published. The group ID is a versioned SHA-256-derived value based on the
 earliest member. The
-representative, whose title names the label, is the member most similar to the
-rest of the group, with ties going to the earliest. Per-member similarity is not
-published.
+representative, whose title names the label, is chosen by title: each distinct
+normalized title counts once, with its copies' embeddings averaged, so a
+headline carried by several feeds is not favoured for its copies. The title
+most similar to the group's other titles wins, ties go to the earliest, and its
+earliest article is the representative. Titles only name groups; they never
+decide membership. Per-member similarity is not published.
 
 After complete worker publication, FreshRSS maintenance resolves representative
 titles through FreshRSS and reconciles each component into an extension-owned

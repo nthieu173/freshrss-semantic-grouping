@@ -72,6 +72,54 @@ def test_singleton_components_are_not_published_as_groups() -> None:
     assert groups == []
 
 
+def test_a_headline_carried_by_several_feeds_is_not_favoured_as_the_name() -> None:
+    # Four copies of the "edge a" headline would outscore the central article
+    # if every copy counted; counted once, the central article names the group.
+    copies = [
+        GroupingInput(f"edge-a-{n}", 10 + n, "edge a", np.array([1.0, 0.0], dtype=np.float32))
+        for n in range(4)
+    ]
+    inputs = [
+        *copies,
+        GroupingInput("center", 30, "center", np.array([0.7, 0.7], dtype=np.float32)),
+        GroupingInput("edge-b", 20, "edge b", np.array([0.0, 1.0], dtype=np.float32)),
+    ]
+    neighbors = [({"entry_id": item.entry_id}, 0.7) for item in inputs[1:]]
+    result = Result([Duplicate({"entry_id": "edge-a-0"}, neighbors)])
+
+    groups = groups_from_result(result, inputs)
+
+    assert len(groups) == 1
+    assert groups[0].representative_entry_id == "center"
+
+
+def test_the_earliest_copy_of_the_winning_title_names_the_group() -> None:
+    inputs = [
+        GroupingInput("edge-a", 10, "edge a", np.array([1.0, 0.0], dtype=np.float32)),
+        GroupingInput("center", 30, "center", np.array([0.7, 0.7], dtype=np.float32)),
+        GroupingInput("center-copy", 40, "center", np.array([0.69, 0.71], dtype=np.float32)),
+        GroupingInput("edge-b", 20, "edge b", np.array([0.0, 1.0], dtype=np.float32)),
+    ]
+    neighbors = [({"entry_id": item.entry_id}, 0.7) for item in inputs[1:]]
+    result = Result([Duplicate({"entry_id": "edge-a"}, neighbors)])
+
+    assert groups_from_result(result, inputs)[0].representative_entry_id == "center"
+
+
+def test_articles_without_a_title_each_count_once() -> None:
+    # Blank titles are not one headline: the two untitled articles must not
+    # pool into a single direction that hides which of them is central.
+    inputs = [
+        GroupingInput("untitled-edge", 10, "", np.array([1.0, 0.0], dtype=np.float32)),
+        GroupingInput("untitled-center", 20, "", np.array([0.7, 0.7], dtype=np.float32)),
+        GroupingInput("titled-edge", 30, "edge", np.array([0.0, 1.0], dtype=np.float32)),
+    ]
+    neighbors = [({"entry_id": item.entry_id}, 0.7) for item in inputs[1:]]
+    result = Result([Duplicate({"entry_id": "untitled-edge"}, neighbors)])
+
+    assert groups_from_result(result, inputs)[0].representative_entry_id == "untitled-center"
+
+
 def test_articles_with_the_same_title_stay_in_their_group() -> None:
     # Grouping ignores titles: a syndicated copy is another source for its
     # story, not a reason to leave the story.

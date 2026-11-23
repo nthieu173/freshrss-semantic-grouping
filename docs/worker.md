@@ -93,16 +93,19 @@ if SemHash unexpectedly attempts text encoding, guaranteeing that the Model2Vec
 model is not resident during grouping.
 
 SemHash duplicate edges are combined with union-find into connected components,
-and members are ordered by `(received_at, entry_id)`. Titles are not compared,
-so a syndicated copy with the same title joins its group as another source.
-Components smaller than two articles are dropped. The earliest member's
-versioned SHA-256-derived ID names the group, so a
-group keeps its identity and label as later articles join. The representative,
-whose title becomes the label name, is the member most similar to the others:
-the highest sum of cosine similarities to every member's unit-length embedding.
-Near-ties go to the earlier member, so a two-article group keeps its first
-title. Publication stores only group identity, representative identity, and
-membership; it does not store member cosine similarities.
+and members are ordered by `(received_at, entry_id)`. Membership never compares
+titles, so a syndicated copy with the same title joins its group as another
+source. Components smaller than two articles are dropped. The earliest member's
+versioned SHA-256-derived ID names the group, so a group keeps its identity and
+label as later articles join. The representative, whose title becomes the label
+name, is chosen among distinct normalized titles, each counted once: copies of a
+headline are averaged into one unit-length direction, and an article without a
+title counts on its own. The title with the highest sum of cosine similarities
+to every title's direction wins, and its earliest article is the representative.
+Near-ties go to the earlier title, so a group of two distinct titles keeps its
+first. Titles only name the group; they never decide membership. Publication
+stores only group identity, representative identity, and membership; it does not
+store member cosine similarities.
 
 All groups are computed before a write transaction starts. Publication rechecks
 the generation and revision, atomically replaces group and membership tables

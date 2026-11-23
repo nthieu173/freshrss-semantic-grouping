@@ -56,6 +56,7 @@ def groups_from_result(
     """Turn SemHash duplicate edges into deterministic connected groups."""
     order = {item.entry_id: (item.received_at, item.entry_id) for item in inputs}
     embeddings = {item.entry_id: item.embedding for item in inputs}
+    titles = {item.entry_id: item.normalized_title for item in inputs}
     parent = {item.entry_id: item.entry_id for item in inputs}
 
     def find(item: str) -> str:
@@ -95,24 +96,44 @@ def groups_from_result(
         # The earliest member keys the group, so its label survives as members
         # arrive; the most central member only names it.
         group_id = hashlib.sha256(("group-v1\0" + members[0]).encode()).hexdigest()[:32]
-        representative = most_central(members, embeddings)
+        representative = most_central(members, embeddings, titles)
         groups.append(PublishedGroup(group_id, representative, tuple(members)))
     groups.sort(key=lambda group: order[group.members[0]])
     return groups
 
 
-def most_central(members: Sequence[str], embeddings: dict[str, NDArray[np.float32]]) -> str:
-    """Return the member closest to the group's mean direction.
+def most_central(
+    members: Sequence[str],
+    embeddings: dict[str, NDArray[np.float32]],
+    titles: dict[str, str],
+) -> str:
+    """Return the earliest member with the title closest to the group's mean direction.
 
-    Members are in arrival order, and near-ties go to the earliest, so a
-    two-article group (always a tie) keeps its first title.
+    Titles only name the group; they never decide membership. Each distinct
+    normalized title counts once, its copies averaged into one direction, so a
+    headline carried by several feeds is not favoured for its copies. Members
+    without a title each count on their own. Members are in arrival order, and
+    near-ties go to the earliest title, so a group of two distinct titles
+    (always a tie) keeps its first.
     """
-    vectors = np.stack([embeddings[entry_id] for entry_id in members]).astype(np.float64)
-    norms = np.linalg.norm(vectors, axis=1, keepdims=True)
-    vectors /= np.where(norms == 0, 1, norms)
-    scores = vectors @ vectors.sum(axis=0)
+    copies: dict[str, list[str]] = {}
+    for entry_id in members:
+        title = titles[entry_id]
+        copies.setdefault("title\0" + title if title else "entry\0" + entry_id, []).append(entry_id)
+    directions = np.stack(
+        [_mean_direction([embeddings[i] for i in ids]) for ids in copies.values()]
+    )
+    scores = directions @ directions.sum(axis=0)
     best = int(np.flatnonzero(scores >= scores.max() - CENTRALITY_TIE_TOLERANCE)[0])
-    return members[best]
+    return list(copies.values())[best][0]
+
+
+def _mean_direction(vectors: Sequence[NDArray[np.float32]]) -> NDArray[np.float64]:
+    stacked = np.stack(vectors).astype(np.float64)
+    norms = np.linalg.norm(stacked, axis=1, keepdims=True)
+    mean = (stacked / np.where(norms == 0, 1, norms)).mean(axis=0)
+    length = np.linalg.norm(mean)
+    return mean / length if length > 0 else mean
 
 
 def group(
