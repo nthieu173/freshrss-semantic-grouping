@@ -12,7 +12,7 @@ fingerprint into `pipeline_config`; the worker does not read FreshRSS files.
 | Similarity threshold | `0.60` | Changes groups without invalidating vectors. |
 | Rolling window | 72 hours | An outer received-date constraint independent of the saved query. |
 | Refresh interval | 30 minutes | Candidate reconciliation interval in 10-minute increments; config/query changes bypass it. |
-| Title/content input | title only | Selected fields become canonical embedding text. |
+| Title/content input | title and content | Selected fields become canonical embedding text. The default threshold suits title and content; titles alone group best nearer `0.45`. |
 | Content limit | 2000 characters | The maximum, since the models embed only about the first 2000 characters. Applied after HTML decoding, markup removal, Unicode normalization, and whitespace normalization. A higher saved limit is treated as 2000. |
 | Embedding batch | 500 | The maximum; fits the 512 MiB worker limit at the 2000-character content limit. |
 | Exact-title filter | yes | Rejects a normalized exact title before insertion. |

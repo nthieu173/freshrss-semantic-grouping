@@ -312,12 +312,14 @@ function exerciseDatabase(SemanticGrouping_SemanticDatabase $database): PDO {
 	]]);
 	check($pdo->query("SELECT normalized_title FROM candidate_members WHERE entry_id='100000000'")->fetchColumn() === 'hello', 'normalized candidate title was not persisted');
 	check($pdo->query('SELECT COUNT(*) FROM pipeline_config')->fetchColumn() == 0, 'incomplete generation became active');
-	// The model and threshold are explicit so this cross-language contract
-	// (shared with worker/tests/test_config.py) does not move with the defaults.
+	// The model, threshold and inputs are explicit so this cross-language
+	// contract (shared with worker/tests/test_config.py) does not move with
+	// the defaults.
 	$config = SemanticGrouping_Config::effectiveWorkerConfig(SemanticGrouping_Config::merge([
 		'candidate_source' => ['mode' => 'all_entries', 'query_id' => null, 'query_name' => 'All entries'],
 		'embedding_model' => 'minishlab/potion-base-8M',
 		'similarity_threshold' => 0.90,
+		'include_content' => false,
 	]), 'query-v1');
 	check(SemanticGrouping_Config::embeddingFingerprint($config) === '735c7ecc39088db6c69eff6eecb21a27d5d78d31652f6b745d4c715eaf8dcfdf', 'PHP/Python embedding fingerprint contract changed');
 	check(SemanticGrouping_Config::groupingFingerprint($config) === 'ead21a46c9b0161a3ecc806982bb2c5488ab79ebf60ff8051ad0e486d6368d99', 'PHP/Python grouping fingerprint contract changed');

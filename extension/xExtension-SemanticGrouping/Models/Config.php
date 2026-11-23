@@ -36,7 +36,7 @@ final class SemanticGrouping_Config {
 			'window_hours' => 72,
 			'candidate_export_interval_minutes' => 30,
 			'include_title' => true,
-			'include_content' => false,
+			'include_content' => true,
 			'content_character_limit' => 2000,
 			'exact_title_enabled' => true,
 			'embedding_batch_size' => self::MAX_EMBEDDING_BATCH_SIZE,
