@@ -606,9 +606,8 @@ function verifyStories(): void {
 	check(FreshRSS_Auth::giveAccess(), 'Could not authenticate the Stories view render.');
 	require_once $extension->getPath() . '/Controllers/storiesController.php';
 	$previousRequest = Minz_Request::currentRequest();
-	// Every sort the view applies; all but reception time read each article's
-	// sort value from FreshRSS.
-	foreach (['id', 'date', 'lastUserModified', 'title', 'rand'] as $sort) {
+	// Every sort the view applies.
+	foreach (['id', 'date', 'lastUserModified', 'title', 'rand', 'length', 'link', 'f.name', 'c.name'] as $sort) {
 		try {
 			Minz_Request::_controllerName('stories');
 			Minz_Request::_actionName('index');

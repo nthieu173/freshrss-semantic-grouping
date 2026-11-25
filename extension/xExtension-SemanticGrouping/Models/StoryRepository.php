@@ -106,7 +106,7 @@ final class SemanticGrouping_StoryRepository {
 		$value = static fn(string $id, string $representative, array $members): string => match ($sort) {
 			'title' => self::sortTitle((string)($values[$representative] ?? '')),
 			'random' => self::shuffleKey($seed, $id),
-			default => self::sortTime($latest($members)),
+			default => self::sortNumber($latest($members)),
 		};
 		$story = static function (string $groupId) use ($publication, $countUnread, $value): array {
 			$group = $publication['groups'][$groupId];
@@ -189,9 +189,9 @@ final class SemanticGrouping_StoryRepository {
 		];
 	}
 
-	/** A time as a sort value: sort values compare as strings. */
-	public static function sortTime(int $time): string {
-		return str_pad((string)max(0, $time), 20, '0', STR_PAD_LEFT);
+	/** A time or size as a sort value: sort values compare as strings. */
+	public static function sortNumber(int $number): string {
+		return str_pad((string)max(0, $number), 20, '0', STR_PAD_LEFT);
 	}
 
 	/** A title, as FreshRSS stores it, as a sort value. */

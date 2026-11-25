@@ -20,10 +20,12 @@ final class FreshExtension_stories_Controller extends FreshRSS_ActionController 
 	public static int $standaloneCount = 0;
 	public static int $singleLabelId = 0;
 	public static int $singleUnread = 0;
-	/** @var 'id'|'date'|'lastUserModified'|'title'|'rand' The toolbar's sort, as the view applies it. */
+	/** @var 'id'|'date'|'lastUserModified'|'title'|'rand'|'length'|'link'|'f.name'|'c.name' The toolbar's sort. */
 	private static string $sort = 'id';
 	private static bool $ascending = false;
 	private static string $seed = '';
+	/** @var array<int,string> category names by ID, for the sort by category */
+	private static array $categoryNames = [];
 
 	public function indexAction(): void {
 		if (!FreshRSS_Auth::hasAccess()) {
@@ -86,11 +88,14 @@ final class FreshExtension_stories_Controller extends FreshRSS_ActionController 
 				}
 			}
 		}
-		// The toolbar's sort and read-state filter, as in the normal view. Sorts
-		// with no meaning for topics and stories (by length, link, feed or
-		// category) keep to reception time.
-		self::$sort = in_array(FreshRSS_Context::$sort, ['date', 'lastUserModified', 'title', 'rand'], true) ? FreshRSS_Context::$sort : 'id';
+		// The toolbar's sort and read-state filter, as in the normal view.
+		self::$sort = in_array(FreshRSS_Context::$sort, ['date', 'lastUserModified', 'title', 'rand', 'length', 'link', 'f.name', 'c.name'], true)
+			? FreshRSS_Context::$sort : 'id';
 		self::$ascending = FreshRSS_Context::$order === 'ASC';
+		// Sorts by length, link, feed or category have no meaning for a topic or
+		// story, which stay latest received first; they order articles only.
+		$articlesOnly = in_array(self::$sort, ['length', 'link', 'f.name', 'c.name'], true);
+		self::$categoryNames = array_map(static fn(FreshRSS_Category $category): string => $category->name(), $categories);
 		$showRead = FreshRSS_Context::isStateEnabled(FreshRSS_Entry::STATE_READ);
 		$showUnread = FreshRSS_Context::isStateEnabled(FreshRSS_Entry::STATE_NOT_READ)
 			|| FreshRSS_Context::isStateEnabled(FreshRSS_Entry::STATE_OR_NOT_READ);
@@ -126,8 +131,8 @@ final class FreshExtension_stories_Controller extends FreshRSS_ActionController 
 			Minz_Request::_param(SemanticGrouping_StoryRepository::SEED, self::$seed);
 		}
 		$page = SemanticGrouping_StoryRepository::arrange($publication, $unread, $after, self::PAGE_SIZE, $show,
-			['id' => 'time', 'date' => 'time', 'lastUserModified' => 'time', 'title' => 'title', 'rand' => 'random'][self::$sort],
-			self::$ascending, $values, self::$seed);
+			['title' => 'title', 'rand' => 'random'][self::$sort] ?? 'time',
+			self::$ascending && !$articlesOnly, $values, self::$seed);
 		self::$firstPage = $after === '';
 		self::$next = $page['next'];
 		self::$topicCount = $page['topics'];
@@ -206,7 +211,7 @@ final class FreshExtension_stories_Controller extends FreshRSS_ActionController 
 			}
 		}
 		usort($articles, static fn(array $a, array $b): int => (self::$ascending ? 1 : -1)
-			* (strcmp(self::sortValue($a['entry']), self::sortValue($b['entry'])) ?: (int)$a['entry']->id() <=> (int)$b['entry']->id()));
+			* (strcmp(self::sortValue($a), self::sortValue($b)) ?: (int)$a['entry']->id() <=> (int)$b['entry']->id()));
 		return $articles;
 	}
 
@@ -241,14 +246,24 @@ final class FreshExtension_stories_Controller extends FreshRSS_ActionController 
 		return self::$sort === 'date' ? $entry->date(raw: true) : $entry->dateAdded(raw: true);
 	}
 
-	/** An article's place in the view's sort, as its topics and stories are placed. */
-	private static function sortValue(FreshRSS_Entry $entry): string {
+	/**
+	 * An article's place in the view's sort.
+	 * @param array{entry:FreshRSS_Entry,feed:FreshRSS_Feed} $article
+	 */
+	private static function sortValue(array $article): string {
+		$entry = $article['entry'];
+		$feedName = SemanticGrouping_StoryRepository::sortTitle($article['feed']->name());
 		return match (self::$sort) {
-			'date' => SemanticGrouping_StoryRepository::sortTime($entry->date(raw: true)),
-			'lastUserModified' => SemanticGrouping_StoryRepository::sortTime($entry->lastUserModified() ?? 0),
+			'date' => SemanticGrouping_StoryRepository::sortNumber($entry->date(raw: true)),
+			'lastUserModified' => SemanticGrouping_StoryRepository::sortNumber($entry->lastUserModified() ?? 0),
 			'title' => SemanticGrouping_StoryRepository::sortTitle($entry->title()),
 			'rand' => SemanticGrouping_StoryRepository::shuffleKey(self::$seed, $entry->id()),
-			default => SemanticGrouping_StoryRepository::sortTime((int)$entry->id()),
+			'length' => SemanticGrouping_StoryRepository::sortNumber(strlen($entry->content(false))),
+			'link' => $entry->link(),
+			'f.name' => $feedName,
+			// Like FreshRSS, by feed within a category.
+			'c.name' => SemanticGrouping_StoryRepository::sortTitle(self::$categoryNames[$article['feed']->categoryId()] ?? '') . "\0" . $feedName,
+			default => SemanticGrouping_StoryRepository::sortNumber((int)$entry->id()),
 		};
 	}
 }

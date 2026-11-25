@@ -637,7 +637,7 @@ function exerciseStories(SemanticGrouping_SemanticDatabase $database, PDO $pdo):
 	check(array_column($oldestFirst['items'][0]['stories'], 'id') === ['ga', 'gb'], 'a topic\'s stories were not ordered least recent first');
 	$published = ['10' => 900, '11' => 100, '20' => 100, '21' => 100, '40' => 300, '50' => 100, '60' => 100, '65' => 200];
 	$byDate = SemanticGrouping_StoryRepository::arrange($recentPublication, [], '', 10, values: $published);
-	check(array_column($byDate['items'], 'id') === ['big', 'small', 'gd', 'ge'] && $byDate['items'][0]['value'] === SemanticGrouping_StoryRepository::sortTime(900), 'items were not ordered by the given times');
+	check(array_column($byDate['items'], 'id') === ['big', 'small', 'gd', 'ge'] && $byDate['items'][0]['value'] === SemanticGrouping_StoryRepository::sortNumber(900), 'items were not ordered by the given times');
 	check(array_column($byDate['items'][0]['stories'], 'id') === ['ga', 'gb'], 'a topic\'s stories were not ordered by the given times');
 	$titles = ['10' => 'Banana', '20' => 'apple', '50' => 'Cherry &amp; co', '40' => 'delta', '65' => 'Echo'];
 	$byTitle = SemanticGrouping_StoryRepository::arrange($recentPublication, [], '', 10, sort: 'title', ascending: true, values: $titles);
