@@ -79,15 +79,17 @@
 		timer = setTimeout(autoLoad, 150);
 	}
 
-	// Collapsed topics and stories, remembered in this browser only.
-	const storageKey = 'semantic-stories-collapsed';
+	// Topics and stories collapsed by hand, remembered in this browser only and
+	// until a newer article joins them: each key keeps the newest one it held.
+	// Those with nothing unread need no memory, the page collapses them itself.
+	const storageKey = 'semantic-stories-collapsed-until';
 
 	function collapsedKeys() {
 		try {
-			const keys = JSON.parse(localStorage.getItem(storageKey) || '[]');
-			return new Set(Array.isArray(keys) ? keys : []);
+			const keys = JSON.parse(localStorage.getItem(storageKey) || '{}');
+			return keys !== null && typeof keys === 'object' && !Array.isArray(keys) ? keys : {};
 		} catch (e) {
-			return new Set();
+			return {};
 		}
 	}
 
@@ -99,13 +101,12 @@
 		}
 		if (remember && section.dataset.key) {
 			const keys = collapsedKeys();
+			delete keys[section.dataset.key];
 			if (collapsed) {
-				keys.add(section.dataset.key);
-			} else {
-				keys.delete(section.dataset.key);
+				keys[section.dataset.key] = section.dataset.newest || '';
 			}
 			try {
-				localStorage.setItem(storageKey, JSON.stringify([...keys].slice(-500)));
+				localStorage.setItem(storageKey, JSON.stringify(Object.fromEntries(Object.entries(keys).slice(-500))));
 			} catch (e) {
 				// Storage unavailable: the state just isn't remembered.
 			}
@@ -116,7 +117,8 @@
 		const keys = collapsedKeys();
 		const sections = [root, ...root.querySelectorAll('.collapsible')];
 		sections.forEach((section) => {
-			if (section.classList.contains('collapsible') && keys.has(section.dataset.key)) {
+			if (section.classList.contains('collapsible') && Object.hasOwn(keys, section.dataset.key)
+					&& keys[section.dataset.key] === section.dataset.newest) {
 				setCollapsed(section, true, false);
 			}
 		});
@@ -162,16 +164,12 @@
 				if (!response.ok) {
 					throw new Error(String(response.status));
 				}
-				const section = form.closest('.collapsible');
 				form.querySelectorAll('input[name="id[]"]').forEach((input) => {
 					document.querySelectorAll('li.story-article[data-entry="' + CSS.escape(input.value) + '"]').forEach((li) => {
 						li.classList.remove('unread');
 					});
 				});
-				refreshCounts();
-				if (section !== null) {
-					setCollapsed(section, true, true);
-				}
+				refreshCounts();	// collapses what is left with nothing unread
 			})
 			.catch(() => {
 				button.disabled = false;
@@ -196,6 +194,11 @@
 	});
 
 	function init() {
+		try {
+			localStorage.removeItem('semantic-stories-collapsed');	// kept collapsed forever
+		} catch (e) {
+			// Storage unavailable: nothing was remembered.
+		}
 		const column = document.querySelector('.semantic-stories .stories-column');
 		if (column !== null) {
 			restoreCollapsed(column);

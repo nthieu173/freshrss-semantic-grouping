@@ -163,9 +163,10 @@ toolbar's read-state filter shows topics and stories with an unread article,
 those read through, or both, the unread ones first. Each story lists its
 articles with source and age, links to its native label, and can be marked read.
 A topic can be marked read as a whole. Topics and stories collapse; those with
-nothing unread start collapsed, and the ones collapsed by hand are remembered in
-the browser's local storage. The view follows the reader's content width and
-"auto load more" setting, and links to **Single articles**.
+nothing unread start collapsed, and the ones collapsed by hand stay so, in the
+browser's local storage, until a newer article joins them. The view follows the
+reader's content width and "auto load more" setting, and links to **Single
+articles**.
 
 `StoryRepository` reads groups, topics, their members and the label mapping in
 one read-only snapshot, holding only entry IDs. FreshRSS supplies the unread IDs

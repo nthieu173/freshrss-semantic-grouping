@@ -67,15 +67,19 @@ $articleList = static function (array $articles) use ($articleRow): void { ?>
 	<ul class="box-content story-articles"><?php foreach ($articles as $article) { $articleRow($article); } ?></ul>
 <?php };
 
+// The newest article a topic or story holds: a collapse by hand lasts until it changes.
+/** @param list<array{entry:FreshRSS_Entry,feed:FreshRSS_Feed}> $articles */
+$newest = static fn(array $articles): string => (string)max([0, ...array_map(static fn(array $article): int => (int)$article['entry']->id(), $articles)]);
+
 $unreadCount = static fn(int $unread): string => $unread > 0
 	? '<span class="unread-count"><span class="story-unread">' . $unread . ' unread</span> · </span>'
 	: '';
 
 /** @param array<string,mixed> $story */
-$storyBox = static function (array $story, bool $nested) use ($articleList, $markReadForm, $toggle, $ago, $span, $plural, $labelUrl, $unreadCount): void {
+$storyBox = static function (array $story, bool $nested) use ($articleList, $markReadForm, $toggle, $ago, $span, $plural, $labelUrl, $unreadCount, $newest): void {
 	$read = $story['unread'] === 0;
 	$label = is_int($story['label']) ? $story['label'] : 0; ?>
-	<section class="box story collapsible<?= $read ? ' story-read collapsed' : '' ?><?= $nested ? ' story-nested' : ' stories-item' ?>" data-key="<?= $story['key'] ?>" data-unread="<?= $story['unread'] ?>">
+	<section class="box story collapsible<?= $read ? ' story-read collapsed' : '' ?><?= $nested ? ' story-nested' : ' stories-item' ?>" data-key="<?= $story['key'] ?>" data-unread="<?= $story['unread'] ?>" data-newest="<?= $newest($story['articles']) ?>">
 		<header class="box-title collapsible-header">
 			<?= $toggle('story', $read) ?>
 			<div class="collapsible-heading">
@@ -127,7 +131,7 @@ $storyBox = static function (array $story, bool $nested) use ($articleList, $mar
 		$topicArticles = array_merge($item['related'], ...array_map(static fn(array $story): array => $story['articles'], $item['stories']));
 		$looseUnread = count(array_filter($item['related'], static fn(array $article): bool => !$article['entry']->isRead()));
 		?>
-		<section class="topic stories-item collapsible<?= $item['unread'] === 0 ? ' collapsed' : '' ?>" data-key="<?= $item['key'] ?>" data-unread="<?= $item['unread'] ?>">
+		<section class="topic stories-item collapsible<?= $item['unread'] === 0 ? ' collapsed' : '' ?>" data-key="<?= $item['key'] ?>" data-unread="<?= $item['unread'] ?>" data-newest="<?= $newest($topicArticles) ?>">
 			<header class="topic-header collapsible-header">
 				<?= $toggle('topic', $item['unread'] === 0) ?>
 				<div class="collapsible-heading">
@@ -143,7 +147,7 @@ $storyBox = static function (array $story, bool $nested) use ($articleList, $mar
 			<div class="topic-stories collapsible-body">
 				<?php foreach ($item['stories'] as $story) { $storyBox($story, true); } ?>
 				<?php if ($item['related'] !== []) { ?>
-				<section class="box story story-nested topic-loose collapsible<?= $looseUnread === 0 ? ' story-read collapsed' : '' ?>" data-key="<?= $item['key'] ?>-loose" data-unread="<?= $looseUnread ?>">
+				<section class="box story story-nested topic-loose collapsible<?= $looseUnread === 0 ? ' story-read collapsed' : '' ?>" data-key="<?= $item['key'] ?>-loose" data-unread="<?= $looseUnread ?>" data-newest="<?= $newest($item['related']) ?>">
 					<header class="box-title collapsible-header">
 						<?= $toggle('list', $looseUnread === 0) ?>
 						<div class="collapsible-heading">
