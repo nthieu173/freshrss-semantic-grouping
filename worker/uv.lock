@@ -116,7 +116,7 @@ wheels = [
 
 [[package]]
 name = "freshrss-semantic-grouping"
-version = "0.18.0"
+version = "0.18.1"
 source = { editable = "." }
 dependencies = [
     { name = "model2vec" },
