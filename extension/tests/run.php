@@ -603,7 +603,7 @@ function exerciseStories(SemanticGrouping_SemanticDatabase $database, PDO $pdo):
 	check($publication['topics']['t']['members'] === ['10', '12', '20', '30', '31'], 'a topic was not read with its members');
 	check($publication['labels'] === ['ga' => 7, 'single-articles' => 9], 'story labels were not read');
 
-	$page = SemanticGrouping_StoryRepository::arrange($publication, ['31' => true, '20' => true], false, 0, 10);
+	$page = SemanticGrouping_StoryRepository::arrange($publication, ['31' => true, '20' => true], '', 10);
 	check(array_column($page['items'], 'id') === ['t', 'gc'], 'topics did not come before stories in no topic');
 	$topic = $page['items'][0];
 	check(array_column($topic['stories'], 'id') === ['gb', 'ga'], 'a topic did not hold its stories, latest first');
@@ -611,14 +611,63 @@ function exerciseStories(SemanticGrouping_SemanticDatabase $database, PDO $pdo):
 	check($topic['stories'][1]['label'] === 7 && $page['items'][1]['label'] === null, 'stories were not linked to their labels');
 	check([$page['topics'], $page['stories'], $page['standalone'], $page['next']] === [1, 2, 1, null], 'the page summary was wrong');
 
-	// Read items are skipped, but positions stay those of the full ordering,
-	// so items read on one page never shift the next.
-	$unreadOnly = SemanticGrouping_StoryRepository::arrange($publication, ['51' => true], true, 0, 10);
-	check(array_column($unreadOnly['items'], 'id') === ['gc'] && $unreadOnly['topics'] === 0, 'read items were not skipped');
-	$first = SemanticGrouping_StoryRepository::arrange($publication, [], false, 0, 1);
-	check(array_column($first['items'], 'id') === ['t'] && $first['next'] === 1, 'a page did not stop at its size');
-	$second = SemanticGrouping_StoryRepository::arrange($publication, ['51' => true], true, 1, 1);
-	check(array_column($second['items'], 'id') === ['gc'] && $second['next'] === null, 'the next page did not continue from its position');
+	// Topics, then stories in no topic, each latest article first, however
+	// large; a topic's latest article may be in one of its stories only.
+	$set = static fn(string ...$members): array => ['representative' => $members[0], 'members' => $members];
+	$recentPublication = [
+		'groups' => ['ga' => $set('10', '11'), 'gb' => $set('20', '21'), 'gc' => $set('50', '70'), 'gd' => $set('40'), 'ge' => $set('65')],
+		'topics' => ['big' => $set('10', '11', '20', '21', '60'), 'small' => $set('50')],
+		'labels' => [],
+	];
+	$recent = SemanticGrouping_StoryRepository::arrange($recentPublication, [], '', 10);
+	check(array_column($recent['items'], 'id') === ['small', 'big', 'ge', 'gd'], 'topics and stories were not ordered latest first');
+	check(array_column($recent['items'][1]['stories'], 'id') === ['gb', 'ga'], 'a topic\'s stories were not ordered latest first');
+	// Read through, topics and stories follow those with an unread article.
+	$partlyRead = SemanticGrouping_StoryRepository::arrange($recentPublication, ['40' => true, '10' => true], '', 10);
+	check(array_column($partlyRead['items'], 'id') === ['big', 'gd', 'small', 'ge'], 'read items did not follow unread ones');
+	check(array_column($partlyRead['items'][0]['stories'], 'id') === ['ga', 'gb'], 'a topic\'s read stories did not follow its unread ones');
+
+	// The toolbar's read-state filter and sort: oldest first, or by other times.
+	$unreadOnly = SemanticGrouping_StoryRepository::arrange($recentPublication, ['40' => true, '10' => true], '', 10, 'unread');
+	check(array_column($unreadOnly['items'], 'id') === ['big', 'gd'] && $unreadOnly['topics'] === 1 && $unreadOnly['standalone'] === 1, 'read items were not left out');
+	$readOnly = SemanticGrouping_StoryRepository::arrange($recentPublication, ['40' => true, '10' => true], '', 10, 'read');
+	check(array_column($readOnly['items'], 'id') === ['small', 'ge'], 'unread items were not left out');
+	$oldestFirst = SemanticGrouping_StoryRepository::arrange($recentPublication, [], '', 10, ascending: true);
+	check(array_column($oldestFirst['items'], 'id') === ['big', 'small', 'gd', 'ge'], 'items were not ordered least recent first');
+	check(array_column($oldestFirst['items'][0]['stories'], 'id') === ['ga', 'gb'], 'a topic\'s stories were not ordered least recent first');
+	$published = ['10' => 900, '11' => 100, '20' => 100, '21' => 100, '40' => 300, '50' => 100, '60' => 100, '65' => 200];
+	$byDate = SemanticGrouping_StoryRepository::arrange($recentPublication, [], '', 10, values: $published);
+	check(array_column($byDate['items'], 'id') === ['big', 'small', 'gd', 'ge'] && $byDate['items'][0]['value'] === SemanticGrouping_StoryRepository::sortTime(900), 'items were not ordered by the given times');
+	check(array_column($byDate['items'][0]['stories'], 'id') === ['ga', 'gb'], 'a topic\'s stories were not ordered by the given times');
+	$titles = ['10' => 'Banana', '20' => 'apple', '50' => 'Cherry &amp; co', '40' => 'delta', '65' => 'Echo'];
+	$byTitle = SemanticGrouping_StoryRepository::arrange($recentPublication, [], '', 10, sort: 'title', ascending: true, values: $titles);
+	check(array_column($byTitle['items'], 'id') === ['big', 'small', 'gd', 'ge'] && $byTitle['items'][1]['value'] === 'cherry & co', 'items were not ordered by title');
+	check(array_column($byTitle['items'][0]['stories'], 'id') === ['gb', 'ga'], 'a topic\'s stories were not ordered by title');
+	// A random order is the same on every page its seed is passed to.
+	$shuffled = SemanticGrouping_StoryRepository::arrange($recentPublication, [], '', 10, sort: 'random', seed: 'abc');
+	$paged = [];
+	$after = '';
+	do {
+		$onePage = SemanticGrouping_StoryRepository::arrange($recentPublication, [], $after, 1, sort: 'random', seed: 'abc');
+		$paged = [...$paged, ...array_column($onePage['items'], 'id')];
+		$after = (string)$onePage['next'];
+	} while ($onePage['next'] !== null);
+	check($paged === array_column($shuffled['items'], 'id') && count($paged) === 4, 'a random order was not kept across its pages');
+	$pagedAscending = SemanticGrouping_StoryRepository::arrange($recentPublication, [], '', 2, ascending: true);
+	$pagedAscending = SemanticGrouping_StoryRepository::arrange($recentPublication, [], (string)$pagedAscending['next'], 2, ascending: true);
+	check(array_column($pagedAscending['items'], 'id') === ['gd', 'ge'], 'least recent first did not continue after the previous page');
+
+	// Read items are shown too, and a page starts after the previous page's
+	// last item, so items read in between never make the next page skip any.
+	$allRead = SemanticGrouping_StoryRepository::arrange($publication, [], '', 10);
+	check(array_column($allRead['items'], 'id') === ['t', 'gc'] && $allRead['topics'] === 1, 'read items were not shown');
+	$first = SemanticGrouping_StoryRepository::arrange($publication, ['31' => true, '51' => true], '', 1);
+	check(array_column($first['items'], 'id') === ['t'] && $first['next'] !== null, 'a page did not stop at its size');
+	$second = SemanticGrouping_StoryRepository::arrange($publication, ['51' => true], $first['next'], 1);
+	check(array_column($second['items'], 'id') === ['gc'] && $second['next'] !== null, 'the next page did not continue after the previous one');
+	$third = SemanticGrouping_StoryRepository::arrange($publication, ['51' => true], $second['next'], 1);
+	check(array_column($third['items'], 'id') === ['t'] && $third['next'] === null, 'an item read since its page did not come again among the read ones');
+	check(array_column(SemanticGrouping_StoryRepository::arrange($publication, [], 'bogus', 10)['items'], 'id') === ['t', 'gc'], 'a malformed cursor did not start over');
 	foreach (['topic_members', 'topics', 'group_members', 'groups', 'managed_labels'] as $table) {
 		$pdo->exec("DELETE FROM {$table}");
 	}

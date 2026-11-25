@@ -31,6 +31,10 @@
 				const column = document.querySelector('.stories-column');
 				const f = footer();
 				page.querySelectorAll('.stories-column > .stories-item').forEach((item) => {
+					// Read since its page was shown, an item comes again among the read ones.
+					if (column.querySelector(':scope > .stories-item[data-key="' + CSS.escape(item.dataset.key) + '"]') !== null) {
+						return;
+					}
 					const node = document.adoptNode(item);
 					column.insertBefore(node, f);
 					restoreCollapsed(node);
@@ -118,10 +122,14 @@
 		});
 	}
 
-	// Unread counts in topic and story headers, recounted from the page.
+	// Unread counts in topic and story headers, recounted from the page. Like
+	// the page itself, a topic or story left with nothing unread collapses.
 	function refreshCounts() {
 		document.querySelectorAll('.semantic-stories .collapsible[data-unread]').forEach((section) => {
 			const unread = section.querySelectorAll('li.story-article.unread').length;
+			if (unread === 0 && section.dataset.unread !== '0') {
+				setCollapsed(section, true, false);
+			}
 			section.dataset.unread = String(unread);
 			const count = section.querySelector(':scope > .collapsible-header .unread-count');
 			if (count !== null) {

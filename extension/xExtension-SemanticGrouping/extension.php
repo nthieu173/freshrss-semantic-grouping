@@ -61,7 +61,7 @@ final class SemanticGroupingExtension extends Minz_Extension {
 	/** @param array<FreshRSS_ReadingMode> $modes @return array<FreshRSS_ReadingMode> */
 	public function navReadingModes(array $modes): array {
 		$params = Minz_Request::currentRequest()['params'] ?? [];
-		unset($params[SemanticGrouping_StoryRepository::CURSOR], $params['ajax']);
+		unset($params[SemanticGrouping_StoryRepository::CURSOR], $params[SemanticGrouping_StoryRepository::SEED], $params['ajax']);
 		$mode = new FreshRSS_ReadingMode(
 			'view-stories',
 			'Stories view',

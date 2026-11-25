@@ -149,23 +149,35 @@ entirely native FreshRSS behavior.
 ## Stories view
 
 The Stories view (`?c=stories`) shows the worker's last complete publication as
-a two-level reading list. Topics come first, those with the most articles
-first; each holds its stories and, under **Also in this topic**, its related
-articles in no story. Stories in no topic follow, most recently received first.
-Each story lists its articles oldest first with source and age, links to its
-native label, and can be marked read. A topic can be marked read as a whole.
-Topics and stories collapse, and the collapsed ones are remembered in the
-browser's local storage. The view follows the reader's content width, unread
-filter and "auto load more" setting, and links to **Single articles**.
+a two-level reading list. Topics come first; each holds its stories and, last,
+under **Also in this topic**, its related articles in no story. Stories in no
+topic follow. Topics, stories and articles are each ordered by the toolbar's
+sort, by default latest received first: a topic or story by its latest article,
+which is also when its header says it was updated. Sorting by publication date
+or by when the reader last changed an article works the same way with those
+times; by title, a topic or story goes by its own title; a random order is
+shuffled anew on each visit and kept by its later pages. Sorts by length, link,
+feed or category have no meaning for a topic and keep to reception time, in the
+chosen direction. The toolbar's read-state filter shows topics and stories with
+an unread article, those read through, or both, the unread ones first. Each
+story lists its articles with source and age, links to its native label, and can
+be marked read. A topic can be marked read as a whole. Topics and stories
+collapse; those with nothing unread start collapsed, and the ones collapsed by
+hand are remembered in the browser's local storage. The view follows the
+reader's content width and "auto load more" setting, and links to **Single
+articles**.
 
 `StoryRepository` reads groups, topics, their members and the label mapping in
-one read-only snapshot, holding only entry IDs. FreshRSS supplies the unread
-IDs from the window's oldest article on, and the page's articles are read in
-one query, so a page costs the same however large the window is. A page is ten
-topics or stories. Its cursor is a position in the full ordering, which reading
-does not change, so marking items read never shifts the next page. Marking read
-posts the article IDs to FreshRSS's own `entry/read` action. The view uses its
-own classes, so FreshRSS's mark-on-scroll and paging scripts leave it alone.
+one read-only snapshot, holding only entry IDs. FreshRSS supplies the unread IDs
+from the window's oldest article on (and, for sorts other than reception time,
+the articles' dates or titles), and the page's articles are read in one query,
+so a page costs about the same however large the window is. A page is ten topics
+or stories. Its cursor is the sort key of the previous page's last item, not a
+position, so items marked read in place, which move to the end, never make the
+next page skip any; one may come again among the read items, and the page skips
+items it already shows. Marking read posts the article IDs to FreshRSS's own
+`entry/read` action. The view uses its own classes, so FreshRSS's mark-on-scroll
+and paging scripts leave it alone.
 
 Like the configuration page, the view reads the semantic database from the web
 server, so FreshRSS needs the shared GID described in the deployment guide. It

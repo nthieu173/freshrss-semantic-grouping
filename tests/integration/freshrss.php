@@ -606,28 +606,33 @@ function verifyStories(): void {
 	check(FreshRSS_Auth::giveAccess(), 'Could not authenticate the Stories view render.');
 	require_once $extension->getPath() . '/Controllers/storiesController.php';
 	$previousRequest = Minz_Request::currentRequest();
-	try {
-		Minz_Request::_controllerName('stories');
-		Minz_Request::_actionName('index');
-		Minz_Request::_params(['state' => (string)FreshRSS_Entry::STATE_ALL]);
-		$controller = new FreshExtension_stories_Controller();
-		$controller->indexAction();
-		$view = $controller->view();
-		// The layout runs this before the sidebar; renderToString() does not.
-		($view->callbackBeforeFeeds)($view);
-		$rendered = $view->renderToString();
-	} finally {
-		Minz_Request::_controllerName($previousRequest['c']);
-		Minz_Request::_actionName($previousRequest['a']);
-		Minz_Request::_params($previousRequest['params']);
-	}
+	// Every sort the view applies; all but reception time read each article's
+	// sort value from FreshRSS.
+	foreach (['id', 'date', 'lastUserModified', 'title', 'rand'] as $sort) {
+		try {
+			Minz_Request::_controllerName('stories');
+			Minz_Request::_actionName('index');
+			Minz_Request::_params(['state' => (string)FreshRSS_Entry::STATE_ALL, 'sort' => $sort]);
+			FreshRSS_Context::updateUsingRequest(false);
+			$controller = new FreshExtension_stories_Controller();
+			$controller->indexAction();
+			$view = $controller->view();
+			// The layout runs this before the sidebar; renderToString() does not.
+			($view->callbackBeforeFeeds)($view);
+			$rendered = $view->renderToString();
+		} finally {
+			Minz_Request::_controllerName($previousRequest['c']);
+			Minz_Request::_actionName($previousRequest['a']);
+			Minz_Request::_params($previousRequest['params']);
+		}
 
-	check(str_contains($rendered, 'class="semantic-stories"') && str_contains($rendered, 'id="aside_feed"'), 'The Stories view did not render inside the reader.');
-	check(!str_contains($rendered, 'stories-notice'), 'The Stories view reported its publication unavailable.');
-	check(str_contains($rendered, 'class="box story collapsible'), 'The Stories view did not render the semantic group as a story.');
-	check(str_contains($rendered, 'data-entry="' . $representativeId . '"'), 'The Stories view did not list the story\'s articles.');
-	check(str_contains($rendered, htmlspecialchars($representative->title(), ENT_COMPAT, 'UTF-8')) || str_contains($rendered, $representative->title()), 'The Stories view did not name the story after its representative.');
-	same(substr_count($rendered, 'class="topic stories-item'), count($topicIds), 'The Stories view did not render each published topic.');
+		check(str_contains($rendered, 'class="semantic-stories"') && str_contains($rendered, 'id="aside_feed"'), "The Stories view sorted by {$sort} did not render inside the reader.");
+		check(!str_contains($rendered, 'stories-notice'), 'The Stories view reported its publication unavailable.');
+		check(str_contains($rendered, 'class="box story collapsible'), 'The Stories view did not render the semantic group as a story.');
+		check(str_contains($rendered, 'data-entry="' . $representativeId . '"'), 'The Stories view did not list the story\'s articles.');
+		check(str_contains($rendered, htmlspecialchars($representative->title(), ENT_COMPAT, 'UTF-8')) || str_contains($rendered, $representative->title()), 'The Stories view did not name the story after its representative.');
+		same(substr_count($rendered, 'class="topic stories-item'), count($topicIds), "The Stories view sorted by {$sort} did not render each published topic.");
+	}
 }
 
 function createConflict(): void {

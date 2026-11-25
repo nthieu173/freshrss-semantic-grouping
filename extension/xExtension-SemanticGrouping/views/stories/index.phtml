@@ -45,7 +45,8 @@ $markReadForm = static function (array $articles, string $label): void {
 		<button class="btn" type="submit"><?= _i('read') ?> <?= $label ?></button>
 	</form>
 <?php };
-$toggle = static fn(string $what): string => '<button class="stories-toggle" type="button" aria-expanded="true" title="Collapse or expand this ' . $what . '">' . _i('down') . '</button>';
+// Topics and stories with nothing left unread start collapsed.
+$toggle = static fn(string $what, bool $collapsed): string => '<button class="stories-toggle" type="button" aria-expanded="' . ($collapsed ? 'false' : 'true') . '" title="Collapse or expand this ' . $what . '">' . _i('down') . '</button>';
 
 /** @param array{entry:FreshRSS_Entry,feed:FreshRSS_Feed} $article */
 $articleRow = static function (array $article) use ($ago): void {
@@ -74,9 +75,9 @@ $unreadCount = static fn(int $unread): string => $unread > 0
 $storyBox = static function (array $story, bool $nested) use ($articleList, $markReadForm, $toggle, $ago, $span, $plural, $labelUrl, $unreadCount): void {
 	$read = $story['unread'] === 0;
 	$label = is_int($story['label']) ? $story['label'] : 0; ?>
-	<section class="box story collapsible<?= $read ? ' story-read' : '' ?><?= $nested ? ' story-nested' : ' stories-item' ?>" data-key="<?= $story['key'] ?>" data-unread="<?= $story['unread'] ?>">
+	<section class="box story collapsible<?= $read ? ' story-read collapsed' : '' ?><?= $nested ? ' story-nested' : ' stories-item' ?>" data-key="<?= $story['key'] ?>" data-unread="<?= $story['unread'] ?>">
 		<header class="box-title collapsible-header">
-			<?= $toggle('story') ?>
+			<?= $toggle('story', $read) ?>
 			<div class="collapsible-heading">
 				<?php if ($label > 0) { ?>
 				<a class="story-title" href="<?= $labelUrl($label) ?>"><?= $story['title'] ?></a>
@@ -126,9 +127,9 @@ $storyBox = static function (array $story, bool $nested) use ($articleList, $mar
 		$topicArticles = array_merge($item['related'], ...array_map(static fn(array $story): array => $story['articles'], $item['stories']));
 		$looseUnread = count(array_filter($item['related'], static fn(array $article): bool => !$article['entry']->isRead()));
 		?>
-		<section class="topic stories-item collapsible" data-key="<?= $item['key'] ?>" data-unread="<?= $item['unread'] ?>">
+		<section class="topic stories-item collapsible<?= $item['unread'] === 0 ? ' collapsed' : '' ?>" data-key="<?= $item['key'] ?>" data-unread="<?= $item['unread'] ?>">
 			<header class="topic-header collapsible-header">
-				<?= $toggle('topic') ?>
+				<?= $toggle('topic', $item['unread'] === 0) ?>
 				<div class="collapsible-heading">
 					<h2 class="topic-title"><?= $item['title'] ?></h2>
 					<div class="story-meta">
@@ -142,9 +143,9 @@ $storyBox = static function (array $story, bool $nested) use ($articleList, $mar
 			<div class="topic-stories collapsible-body">
 				<?php foreach ($item['stories'] as $story) { $storyBox($story, true); } ?>
 				<?php if ($item['related'] !== []) { ?>
-				<section class="box story story-nested topic-loose collapsible<?= $looseUnread === 0 ? ' story-read' : '' ?>" data-key="<?= $item['key'] ?>-loose" data-unread="<?= $looseUnread ?>">
+				<section class="box story story-nested topic-loose collapsible<?= $looseUnread === 0 ? ' story-read collapsed' : '' ?>" data-key="<?= $item['key'] ?>-loose" data-unread="<?= $looseUnread ?>">
 					<header class="box-title collapsible-header">
-						<?= $toggle('list') ?>
+						<?= $toggle('list', $looseUnread === 0) ?>
 						<div class="collapsible-heading">
 							<span class="story-title">Also in this topic</span>
 							<div class="story-meta">
